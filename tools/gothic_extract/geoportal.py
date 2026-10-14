@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 SOURCE_KIND = {"zen": "ground", "script": "script"}
+DASH = "–"
 
 
 def _read(path: Path) -> dict:
@@ -41,54 +42,88 @@ def _lock_label(p: dict) -> str:
     return " · ".join(parts)
 
 
-def unique_character_codes(npcs: list[dict]) -> set[str]:
-    """Named, unique characters.
+# The same person with two instance codes in one world (e.g. before/after joining the dragon hunters).
+# Counting rules cannot tell these from generic two-instance names, so they are listed by name.
+SAME_PERSON = {"Gorn", "Myxir"}
 
-    - people: exactly one NPC instance in this world carries the name (the same person may have a second
-      instance in another world, e.g. on the ship to Irdorath);
-    - monsters: the name is unique in the whole game and the instance is inserted once here, so bosses like
-      Inubis count but a species that happens to appear once (a single beetle) does not.
+
+def unique_characters(npcs: list[dict]) -> dict[str, list[str]]:
+    """Named, unique characters -> their instance codes in this world.
+
+    - people (guild below GIL_SEPERATOR_HUM, incl. NONE): exactly one NPC instance in this world carries the
+      name (the same person may have another instance in a different world, e.g. on the ship to Irdorath);
+    - monsters: the name is unique in the whole game and the instance is inserted once in the whole game,
+      so bosses like Inubis count but a species that happens to appear once here does not.
     """
-    codes_by_name: dict[str, set[str]] = defaultdict(set)
-    inserts = Counter(f["properties"]["code"] for f in npcs)
+    codes_by_name: dict[str, list[str]] = defaultdict(list)
     for f in npcs:
         p = f["properties"]
         if not p["name"]:
             continue
-        if p.get("is_human", True) or (p.get("name_unique_in_game", False) and inserts[p["code"]] == 1):
-            codes_by_name[p["name"]].add(p["code"])
-    return {next(iter(codes)) for codes in codes_by_name.values() if len(codes) == 1}
+        if p["is_human"] or (p["name_unique_in_game"] and p["inserts_in_game"] == 1):
+            if p["code"] not in codes_by_name[p["name"]]:
+                codes_by_name[p["name"]].append(p["code"])
+    return {name: codes for name, codes in codes_by_name.items() if len(codes) == 1 or name in SAME_PERSON}
 
 
 def _minutes(hhmm: str) -> int:
     h, m = hhmm.split(":")
-    return int(h) * 60 + int(m)
+    return (int(h) * 60 + int(m)) % 1440
+
+
+def _hhmm(m: int) -> str:
+    m %= 1440
+    return f"{m // 60:02d}:{m % 60:02d}"
 
 
 def summarize_times(times: list[str]) -> str:
-    """'HH:MM–HH:MM' slots → short label: touching slots merged, many gaps collapsed to one span."""
-    spans = sorted((t.split("–") for t in times), key=lambda se: _minutes(se[0]))
-    merged: list[list[str]] = []
-    for start, end in spans:
-        if merged and merged[-1][1] == start:
-            merged[-1][1] = end
-        else:
-            merged.append([start, end])
-    if len(merged) <= 3:
-        return ", ".join(f"{s}–{e}" for s, e in merged)
-    return f"{merged[0][0]}–{merged[-1][1]} (z przerwami)"
+    """'HH:MM–HH:MM' slots on a 24 h circle -> short label.
+
+    Touching slots merge (also across midnight); a full circle is "cały dzień"; with more than three
+    separate spans the label collapses to "first start–last end (z przerwami)", read from the end of
+    the longest gap.
+    """
+    covered = [False] * 1440
+    for t in times:
+        s, e = (_minutes(x) for x in t.split(DASH))
+        m = s
+        while True:
+            covered[m] = True
+            m = (m + 1) % 1440
+            if m == e:
+                break
+    if all(covered):
+        return "cały dzień"
+    starts = [m for m in range(1440) if covered[m] and not covered[m - 1]]
+    runs = []
+    for s in starts:
+        e = s
+        while covered[e % 1440]:
+            e += 1
+        runs.append((s, e))
+    # begin with the run that follows the longest gap
+    gaps = [((runs[(i + 1) % len(runs)][0] - runs[i][1]) % 1440, (i + 1) % len(runs)) for i in range(len(runs))]
+    first = max(gaps)[1]
+    runs = runs[first:] + runs[:first]
+    if len(runs) <= 3:
+        return ", ".join(f"{_hhmm(s)}{DASH}{_hhmm(e)}" for s, e in runs)
+    return f"{_hhmm(runs[0][0])}{DASH}{_hhmm(runs[-1][1])} (z przerwami)"
 
 
 def _routine_groups(routine_feats: list[dict], codes: set[str]) -> list[dict]:
-    """Merge routine points of one character at one waypoint (per routine) into a single place."""
+    """Merge routine points of one character at one waypoint (per routine) into a single place.
+
+    The pseudo-routine TOT (dead/removed NPCs parked at a hidden waypoint) is skipped.
+    """
     groups: dict[tuple, dict] = {}
     for f in routine_feats:
         p = f["properties"]
-        if p["npc_code"] not in codes:
+        if p["npc_code"] not in codes or p["routine"] == "TOT" or p["waypoint"] == "TOT":
             continue
         key = (p["npc_code"], p["routine"], p["waypoint"])
-        g = groups.setdefault(key, {"feature": f, "times": [], "actions": []})
-        g["times"].append(f"{p['start']}–{p['end']}")
+        g = groups.setdefault(key, {"feature": f, "times": [], "actions": [],
+                                    "id": f"{p['npc_code']}:{p['routine']}:{p['waypoint']}"})
+        g["times"].append(f"{p['start']}{DASH}{p['end']}")
         if p["action"] not in g["actions"]:
             g["actions"].append(p["action"])
     return list(groups.values())
@@ -115,54 +150,61 @@ def build_geoportal(src: Path, dst: Path) -> dict:
         p = f["properties"]
         for i in p["inventory"]:
             certainty = "" if i["certainty"] == "always" else ", możliwe"
-            item_places[i["code"]].append(_place(f, "npc", f"u NPC: {p['name']}{certainty}", amount=i["amount"]))
+            item_places[i["code"]].append(_place(f, "npc", f"u NPC: {p['name']}{certainty}", amount=i["amount"],
+                                                 certainty=i["certainty"]))
 
     entries = []
     for code, places in sorted(item_places.items()):
         d = catalog.get(code, {})
         entries.append({"id": f"item:{code}", "type": "item", "code": code, "name": d.get("name") or code,
-                        "category": d.get("category"), "total": sum(pl.get("amount", 1) for pl in places),
+                        "category": d.get("category"), "total": sum(pl.get("amount", 1) for pl in places if pl.get("certainty", "always") == "always"),
                         "places": places})
 
-    unique = unique_character_codes(npcs)
-    groups = _routine_groups(routines, unique)
+    characters = unique_characters(npcs)
+    char_codes = {c for codes in characters.values() for c in codes}
+    groups = _routine_groups(routines, char_codes)
     groups_by_code: dict[str, list[dict]] = defaultdict(list)
     place_feats = []
     for g in groups:
         f, p = g["feature"], g["feature"]["properties"]
         groups_by_code[p["npc_code"]].append(g)
         place_feats.append({"type": "Feature", "geometry": f["geometry"], "properties": {
-            "id": f"{p['npc_code']}:{p['routine']}:{p['waypoint']}", "npc_code": p["npc_code"], "npc_name": p["npc_name"],
-            "routine": p["routine"], "is_default": p["is_default"], "waypoint": p["waypoint"],
-            "times": g["times"], "actions": g["actions"]}})
+            "id": g["id"], "npc_code": p["npc_code"], "npc_name": p["npc_name"], "routine": p["routine"],
+            "is_default": p["is_default"], "waypoint": p["waypoint"], "times": g["times"], "actions": g["actions"]}})
 
-    char_feats, seen = [], set()
+    inserts_by_code: dict[str, list[dict]] = defaultdict(list)
     for f in npcs:
-        p = f["properties"]
-        if p["code"] not in unique:
-            continue
-        spawn = _place(f, "spawn", f"pojawia się ({p['insert_waypoint']})", chapter=p["chapter"])
-        if p["code"] in seen:  # inserted again (e.g. later chapter): another spawn place
-            next(e for e in entries if e["id"] == f"character:{p['code']}")["places"].append(spawn)
-            continue
-        seen.add(p["code"])
-        char_feats.append({"type": "Feature", "geometry": f["geometry"], "properties": {
-            k: p[k] for k in ("id", "code", "name", "guild_name", "level", "chapter", "inventory", "game_pos", "height_m")}})
-        places = [spawn]
-        for g in sorted(groups_by_code[p["code"]], key=lambda g: (not g["feature"]["properties"]["is_default"],
-                                                                  g["feature"]["properties"]["routine"])):
+        inserts_by_code[f["properties"]["code"]].append(f)
+    char_feats = []
+    for name, codes in sorted(characters.items()):
+        first = inserts_by_code[codes[0]][0]
+        fp = first["properties"]
+        char_feats.append({"type": "Feature", "geometry": first["geometry"], "properties": {
+            **{k: fp[k] for k in ("id", "code", "name", "guild_name", "level", "chapter", "inventory", "game_pos",
+                                  "height_m")}, "codes": codes}})
+        places = [_place(f, "spawn", f"pojawia się ({f['properties']['insert_waypoint']})",
+                         chapter=f["properties"]["chapter"]) for c in codes for f in inserts_by_code[c]]
+        for g in sorted((g for c in codes for g in groups_by_code[c]),
+                        key=lambda g: (not g["feature"]["properties"]["is_default"], g["feature"]["properties"]["routine"])):
             rp = g["feature"]["properties"]
             prefix = "" if rp["is_default"] else f"[{rp['routine']}] "
-            places.append(_place(g["feature"], "routine", prefix + summarize_times(g["times"]), routine=rp["routine"],
-                                 is_default=rp["is_default"], actions=g["actions"]))
-        entries.append({"id": f"character:{p['code']}", "type": "character", "code": p["code"], "name": p["name"],
-                        "category": p["guild_name"], "level": p["level"], "places": places})
+            pl = _place(g["feature"], "routine", prefix + summarize_times(g["times"]), routine=rp["routine"],
+                        is_default=rp["is_default"], actions=g["actions"])
+            pl["ref"] = g["id"]
+            places.append(pl)
+        entries.append({"id": f"character:{codes[0]}", "type": "character", "code": codes[0], "codes": codes,
+                        "name": name, "category": fp["guild_name"], "level": fp["level"], "places": places})
+
+    npc_layer = [{"type": "Feature", "geometry": f["geometry"], "properties": {
+        k: f["properties"][k] for k in ("id", "code", "name", "guild_name", "level", "chapter", "insert_waypoint")}}
+        for f in npcs]
 
     _write(dst / "search_index.json", {"version": 1, "entries": entries})
     _write(dst / "items.geojson", _fc([{"type": "Feature", "geometry": f["geometry"], "properties": {
         k: f["properties"][k] for k in ("id", "code", "name", "category", "amount", "source", "spot")}} for f in items]))
     _write(dst / "containers.geojson", _fc(containers))
     _write(dst / "characters.geojson", _fc(char_feats))
+    _write(dst / "npcs.geojson", _fc(npc_layer))
     _write(dst / "character_places.geojson", _fc(place_feats))
 
     copied = []
@@ -180,9 +222,9 @@ def build_geoportal(src: Path, dst: Path) -> dict:
         "version": 1,
         "counts": {"search_items": sum(e["type"] == "item" for e in entries),
                    "search_characters": len(char_feats), "items": len(items), "containers": len(containers),
-                   "character_places": len(place_feats)},
+                   "npcs": len(npc_layer), "character_places": len(place_feats)},
         "files": sorted(["search_index.json", "items.geojson", "containers.geojson", "characters.geojson",
-                         "character_places.geojson", "metadata.json", "README.md"] + copied),
+                         "npcs.geojson", "character_places.geojson", "metadata.json", "README.md"] + copied),
     }
     _write(dst / "metadata.json", meta)
     shutil.copy2(Path(__file__).with_name("geoportal_README.md"), dst / "README.md")

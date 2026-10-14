@@ -10,7 +10,7 @@ z pełnego wyniku ekstrakcji (`output/...`). Nie edytuj jej ręcznie, tylko wyge
   (domyślnie lon 0°, lat 0°, h 0 m), w skali 1:1 (1 jednostka gry = 1 cm).
 - Wszystkie współrzędne w plikach to WGS84 `[lon, lat, h]`, `h` w metrach nad elipsoidą.
   Część terenu leży poniżej 0 m, więc **wyłącz globus** albo test głębokości względem terenu.
-- `game_pos` we właściwościach to oryginalne współrzędne gry (cm), do przeliczeń i debugowania.
+- `game_pos` (w `containers` i `characters`) to oryginalne współrzędne gry (cm), do przeliczeń i debugowania.
 
 ## Modele 3D
 
@@ -54,19 +54,21 @@ const model = await Cesium.Model.fromGltfAsync({
 | `ground` | przedmiot | leży w świecie od początku gry |
 | `script` | przedmiot | wstawiany przez skrypt przy starcie świata |
 | `container` | przedmiot | w skrzyni; `label` mówi, czy zamknięta, klucz, kombinacja zamka |
-| `npc` | przedmiot | w ekwipunku NPC (także zwykłych NPC i potworów); `ref` → punkt NPC |
-| `spawn` | postać | gdzie skrypt wstawia postać do świata (`chapter`: rozdział, jeśli później niż na starcie) |
-| `routine` | postać | gdzie postać przebywa w ciągu dnia; `is_default: false` = rutyna po zadaniu/zdarzeniu (nazwa w `routine`) |
+| `npc` | przedmiot | w ekwipunku NPC (także zwykłych NPC i potworów); `ref` → `npcs.geojson`; `certainty`: `always`/`possible` |
+| `spawn` | postać | gdzie skrypt wstawia postać do świata; `chapter`: numer rozdziału, gdy wstawienie należy do funkcji rozdziału, `null` = start świata albo dialog; `ref` → `npcs.geojson` |
+| `routine` | postać | gdzie postać przebywa w ciągu dnia; `is_default: false` = rutyna po zadaniu/zdarzeniu (nazwa w `routine`); `ref` → `character_places.geojson` |
 
-`amount` = liczba sztuk w tym miejscu. `ref` = `id` obiektu w odpowiedniej warstwie GeoJSON.
+`amount` = liczba sztuk w tym miejscu. `ref` = `id` obiektu w warstwie podanej w tabeli. `total` liczy tylko sztuki pewne (bez `possible`).
+
+Wiele różnych przedmiotów ma tę samą nazwę („Klucz”, „Miecz”, „Runa”, „Zwój”…), więc w podpowiedziach wyszukiwarki pokazuj też `category`. Postać może mieć kilka kodów instancji (`codes`), np. Gorn przed i po dołączeniu do łowców smoków.
 
 Etykieta rutyny łączy przyległe przedziały czasu; gdy przerw jest dużo, pokazuje zakres
-„od–do (z przerwami)”. Pełna lista przedziałów jest w `character_places.geojson → times`.
+„od–do (z przerwami)”, a całą dobę jako „cały dzień”. Pełna lista przedziałów jest w `character_places.geojson → times`.
 
 Postać jest „unikatowa”:
-- **ludzie** — imię nosi dokładnie jedna postać w tym świecie (Harad, Lothar, Wilk-najemnik — tak;
+- **ludzie** (także bez gildii, np. Diego, Lester) — imię nosi dokładnie jedna postać w tym świecie (Harad, Lothar, Wilk-najemnik — tak;
   Bandyta, Strażnik miejski — nie);
-- **potwory** — imię jest jedyne w całej grze i potwór jest wstawiony raz (Pan cienia Inubis — tak;
+- **potwory** — imię jest jedyne w całej grze i potwór jest wstawiony raz w całej grze (Pan cienia Inubis, Czarny troll — tak;
   wilki, dziki, chrząszcze — nie).
 
 ## Warstwy GeoJSON
@@ -74,8 +76,13 @@ Postać jest „unikatowa”:
 | Plik | Obiekt | Najważniejsze pola |
 |---|---|---|
 | `items.geojson` | przedmiot w świecie | `code`, `name`, `category`, `amount`, `source` (`zen`/`script`), `spot` |
-| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]` |
-| `characters.geojson` | unikatowa postać (miejsce pojawienia się) | `code`, `name`, `guild_name`, `level`, `chapter`, `inventory` |
+| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni |
+| `characters.geojson` | unikatowa postać (miejsce pojawienia się) | `code`, `codes`, `name`, `guild_name`, `level`, `chapter`, `inventory`, `game_pos`, `height_m` |
+| `npcs.geojson` | każde wstawienie NPC (także zwykłych i potworów) | `code`, `name`, `guild_name`, `level`, `chapter`, `insert_waypoint` |
 | `character_places.geojson` | miejsce z rutyny postaci | `npc_code`, `npc_name`, `routine`, `is_default`, `waypoint`, `times`, `actions` |
 
 Wszystkie teksty są po polsku, w UTF-8.
+
+## Rozmiar
+
+Warstwy i indeks to ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Modele dobrze jest serwować z CDN albo Cesium ion (który sam tnie `.glb` na 3D Tiles).

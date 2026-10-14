@@ -49,7 +49,8 @@ class NpcRec:
     inventory: list[InvItem] = field(default_factory=list)
     routines: list[RoutinePoint] = field(default_factory=list)
     name_unique_in_game: bool = False  # no other NPC instance in the whole script has this name
-    is_human: bool = False  # guild below GIL_SEPERATOR_HUM (people, not monsters/orcs)
+    is_human: bool = False  # guild below GIL_SEPERATOR_HUM, incl. GIL_NONE (people, not monsters/orcs)
+    inserts_in_game: int = 0  # Wld_InsertNpc calls for this instance across all worlds
 
 
 def _chapter(func_name: str) -> int | None:
@@ -134,6 +135,8 @@ def game_name_counts(vm: zenkit.DaedalusVm) -> Counter:
 def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[str] = frozenset()) -> list[NpcRec]:
     """exclude: names of functions whose inserts belong to other worlds."""
     name_counts = game_name_counts(vm)
+    all_inserts = find_calls(vm, {"WLD_INSERTNPC"})
+    inserts_in_game = Counter((symbol_name(vm, c.args[0]) or "").upper() for c in all_inserts)
     sep = vm.get_symbol_by_name("GIL_SEPERATOR_HUM")
     human_below = sep.get_int() if sep is not None else 16
     known = resolver.names()
@@ -141,7 +144,7 @@ def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[st
     rtn_by_id = _routines_by_id(vm)
     cache: dict[str, tuple] = {}
     out = []
-    for c in find_calls(vm, {"WLD_INSERTNPC"}):
+    for c in all_inserts:
         if c.caller in exclude:
             continue
         code = symbol_name(vm, c.args[0])
@@ -162,7 +165,7 @@ def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[st
         name, guild, level, inv, routines = cache[code]
         out.append(NpcRec(code, name, guild, guilds.get(guild, str(guild)), level, wp.upper(), c.caller,
                           _chapter(c.caller), resolver.resolve(wp), inv, routines, name_counts[name] == 1,
-                          0 < guild < human_below))
+                          guild < human_below, inserts_in_game[code]))
     return out
 
 

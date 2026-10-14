@@ -62,6 +62,10 @@ def test_only_unique_characters(index):
     assert "Pan cienia Inubis" in names
     # humans with a second incarnation in another world (e.g. the ship to Irdorath) stay
     assert {"Bennet", "Cipher", "Lee"} <= set(names)
+    # key characters with guild NONE, and one person with two instance codes in this world
+    assert {"Diego", "Lester", "Lares", "Gorn", "Myxir"} <= set(names)
+    # quest monsters inserted exactly once in the whole game are unique (black troll, Serpentes' golem)
+    assert {"Czarny troll", "Magiczny golem"} <= set(names)
     assert len(names) > 100
 
 
@@ -77,7 +81,8 @@ def test_character_layers_only_unique(dist, index):
     places = json.loads((dist / "character_places.geojson").read_text("utf-8"))["features"]
     codes = {e["code"] for e in index["entries"] if e["type"] == "character"}
     assert {f["properties"]["code"] for f in chars} == codes
-    assert {f["properties"]["npc_code"] for f in places} <= codes
+    all_codes = {c for e in index["entries"] if e["type"] == "character" for c in e["codes"]}
+    assert {f["properties"]["npc_code"] for f in places} <= all_codes
     assert all("times" in f["properties"] for f in places)
 
 
@@ -92,3 +97,25 @@ def test_merge_times():
     assert summarize_times(["08:00–12:00", "12:00–20:00"]) == "08:00–20:00"
     assert summarize_times(["22:00–07:00"]) == "22:00–07:00"
     assert summarize_times(["07:00–07:10", "07:20–07:30", "08:00–08:10", "09:00–09:10", "18:50–19:00"])         == "07:00–19:00 (z przerwami)"
+
+
+def test_midnight_spans():
+    from gothic_extract.geoportal import summarize_times
+
+    assert summarize_times(["08:00–23:00", "23:00–08:00"]) == "cały dzień"
+    assert summarize_times(["07:00–12:00", "22:00–07:00"]) == "22:00–12:00"
+
+
+def test_no_dead_npc_pseudo_routine(index):
+    for e in index["entries"]:
+        assert not any(p.get("routine") == "TOT" for p in e["places"]), e["name"]
+
+
+def test_every_ref_resolves(dist, index):
+    layer_for = {"ground": "items", "script": "items", "container": "containers", "npc": "npcs",
+                 "spawn": "npcs", "routine": "character_places"}
+    ids = {name: {f["properties"]["id"] for f in json.loads((dist / f"{name}.geojson").read_text("utf-8"))["features"]}
+           for name in set(layer_for.values())}
+    for e in index["entries"]:
+        for p in e["places"]:
+            assert p["ref"] in ids[layer_for[p["kind"]]], (e["id"], p)
