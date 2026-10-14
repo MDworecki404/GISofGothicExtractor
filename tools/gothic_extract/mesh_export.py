@@ -34,7 +34,7 @@ def _compiled_texture_name(tga: str) -> str:
     return f"{stem}-C.TEX"
 
 
-def _load_png(vfs: zenkit.Vfs, tga: str) -> tuple[bytes, bool] | None:
+def load_png(vfs: zenkit.Vfs, tga: str) -> tuple[bytes, bool] | None:
     """Returns (png bytes, has transparent pixels) or None when the texture is missing."""
     if not tga:
         return None
@@ -50,7 +50,7 @@ def _load_png(vfs: zenkit.Vfs, tga: str) -> tuple[bytes, bool] | None:
     return buf.getvalue(), has_alpha
 
 
-class _Blob:
+class Blob:
     def __init__(self):
         self.parts: list[bytes] = []
         self.size = 0
@@ -102,7 +102,7 @@ def export_world_glb(world: zenkit.World, vfs: zenkit.Vfs, out_path: Path) -> Me
     P, F, M = _triangulate(mesh)
 
     stats = MeshStats(triangles=int(len(P)))
-    blob = _Blob()
+    blob = Blob()
     accessors: list[gl.Accessor] = []
     gl_materials: list[gl.Material] = []
     images: list[gl.Image] = []
@@ -139,7 +139,7 @@ def export_world_glb(world: zenkit.World, vfs: zenkit.Vfs, out_path: Path) -> Me
         mat = materials[int(mi)]
         tex_name = (mat.texture or "").upper()
         if tex_name not in image_by_tex:
-            loaded = _load_png(vfs, tex_name)
+            loaded = load_png(vfs, tex_name)
             if loaded is None:
                 image_by_tex[tex_name] = None
             else:

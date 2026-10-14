@@ -10,6 +10,7 @@ from .daedalus_scan import other_world_functions
 from .npcs import extract_npcs, extract_script_items
 from .script_vm import make_vm
 from .vfs import open_vfs
+from .vob_models import export_vob_models
 from .world_data import PointResolver, load_world
 
 
@@ -19,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--world", required=True, help="ZEN name without extension, e.g. NEWWORLD")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--skip-mesh", action="store_true", help="do not export world.glb")
+    ap.add_argument("--skip-models", action="store_true", help="do not export VOB/item models (models/*.glb)")
     args = ap.parse_args(argv)
 
     cfg = load_game(args.game)
@@ -38,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_mesh:
         print("[4/5] world mesh -> world.glb", flush=True)
         mesh = export_world_glb(world, vfs, args.out / "world.glb")
+    if not args.skip_models:
+        print("[4/5] VOB and item models -> models/*.glb", flush=True)
+        mr = export_vob_models(vfs, wd, catalog, script_items, args.out / "models")
+        print(f"  models: {mr.models}, instances: {mr.instances}, missing: {len(mr.missing)}", flush=True)
     print("[5/5] writing GeoJSON", flush=True)
     report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, script_items, mesh)
     for k, v in report.counts.items():

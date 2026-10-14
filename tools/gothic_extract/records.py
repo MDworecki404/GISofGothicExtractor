@@ -12,6 +12,7 @@ class VobRec:
     pos: Vec3
     rot: list[float]  # 3x3, row-major
     parent_id: int | None
+    show_visual: bool = True
 
 
 @dataclass

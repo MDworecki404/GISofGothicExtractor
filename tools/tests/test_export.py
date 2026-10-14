@@ -12,7 +12,7 @@ from gothic_extract.records import ItemRec, WorldData
 @pytest.fixture(scope="module")
 def full_run(tmp_path_factory, g2_cfg):
     out = tmp_path_factory.mktemp("out")
-    run_cli(["--game", "g2nk", "--world", "NEWWORLD", "--out", str(out), "--skip-mesh"])
+    run_cli(["--game", "g2nk", "--world", "NEWWORLD", "--out", str(out), "--skip-mesh", "--skip-models"])
     return out
 
 

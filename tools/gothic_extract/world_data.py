@@ -52,7 +52,8 @@ def load_world(vfs: zenkit.Vfs, world_file: str, version: zenkit.GameVersion) ->
         counter[0] += 1
         vid = counter[0]
         pos = _vec(v.position)
-        wd.vobs.append(VobRec(vid, v.type.name, v.name or "", _visual_name(v), pos, _rot(v.rotation), parent_id))
+        wd.vobs.append(VobRec(vid, v.type.name, v.name or "", _visual_name(v), pos, _rot(v.rotation), parent_id,
+                              bool(v.show_visual)))
         if v.type == T.oCItem:
             wd.items.append(ItemRec(v.instance.upper(), max(v.amount, 1), pos, "zen", vid, None))
         elif v.type == T.oCMobContainer:

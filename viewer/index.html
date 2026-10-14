@@ -52,6 +52,8 @@
       <label><input type="checkbox" data-layer="containers" checked><span class="dot" style="background:var(--chest)"></span>Skrzynie</label>
       <label><input type="checkbox" data-layer="npcs"><span class="dot" style="background:var(--npc)"></span>NPC</label>
       <label><input type="checkbox" data-layer="model" checked>Model świata</label>
+      <label><input type="checkbox" data-layer="vobs" checked>Obiekty</label>
+      <label><input type="checkbox" data-layer="itemModels" checked>Modele przedmiotów</label>
     </div>
   </header>
   <div id="results"></div>
@@ -85,6 +87,8 @@ const layers = {
   containers: scene.primitives.add(new C.PointPrimitiveCollection()),
   npcs: scene.primitives.add(new C.PointPrimitiveCollection()),
   model: null,
+  vobs: scene.primitives.add(new C.PrimitiveCollection()),
+  itemModels: scene.primitives.add(new C.PrimitiveCollection()),
 };
 layers.npcs.show = false;
 const highlight = scene.primitives.add(new C.PointPrimitiveCollection());
@@ -137,17 +141,34 @@ async function load() {
   status.textContent = `${items.features.length} przedmiotów · ${containers.features.length} skrzyń · ${npcs.features.length} NPC — wczytywanie modelu…`;
 
   try {
-    layers.model = await C.Model.fromGltfAsync({ url: DATA + "world.glb", modelMatrix: origin, backFaceCulling: true,
-      // world.glb is (E, U, -N): only the standard Y-up → Z-up turn, no forward-axis rotation
-      upAxis: C.Axis.Y, forwardAxis: C.Axis.X });
+    layers.model = await C.Model.fromGltfAsync({ url: DATA + "world.glb", backFaceCulling: true, ...gltfAxes });
     scene.primitives.add(layers.model);
     status.textContent = status.textContent.replace(" — wczytywanie modelu…", "");
   } catch (e) {
     status.textContent += " (brak world.glb)";
     console.error(e);
   }
+  loadModels(status);
   const sphere = C.BoundingSphere.fromPoints([...Array(layers.items.length).keys()].map((i) => layers.items.get(i).position));
   viewer.camera.flyToBoundingSphere(sphere, { duration: 0, offset: new C.HeadingPitchRange(0, C.Math.toRadians(-60), sphere.radius * 2.2) });
+}
+
+// world.glb and models/*.glb are (E, U, -N): only the Y-up → Z-up turn, no forward-axis rotation
+const gltfAxes = { modelMatrix: origin, upAxis: C.Axis.Y, forwardAxis: C.Axis.X };
+
+async function loadModels(status) {
+  let index;
+  try { index = await fetch(DATA + "models/index.json").then((r) => r.json()); } catch { return; }
+  let done = 0;
+  const base = status.textContent;
+  await Promise.all(index.models.map(async (m) => {
+    try {
+      const model = await C.Model.fromGltfAsync({ url: DATA + "models/" + m.file, ...gltfAxes });
+      layers[m.kind === "item" ? "itemModels" : "vobs"].add(model);
+    } catch (e) { console.warn(m.file, e); }
+    status.textContent = `${base} · modele ${++done}/${index.models.length}`;
+  }));
+  status.textContent = base;
 }
 
 function search(text) {
