@@ -19,4 +19,4 @@ def test_1km_east_at_equator():
 
 def test_1km_north_at_equator():
     lon, lat, _ = enu_to_lonlat(0, 1000, 0, 0, 0, 0)
-    assert lat == pytest.approx(0.0090437173, rel=1e-6)
+    assert lat == pytest.approx(0.0090436948, rel=1e-6)
