@@ -21,3 +21,10 @@ def g2_vfs(g2_cfg):
     from gothic_extract.vfs import open_vfs
 
     return open_vfs(g2_cfg)
+
+
+@pytest.fixture(scope="session")
+def newworld(g2_cfg, g2_vfs):
+    from gothic_extract.world_data import load_world
+
+    return load_world(g2_vfs, "NEWWORLD.ZEN", g2_cfg.version)
