@@ -5,7 +5,7 @@ EXT_mesh_gpu_instancing instance, in the same frame as world.glb:
 glTF = (x/100, y/100, -z/100) of game coordinates.
 """
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,7 +19,9 @@ from .records import ItemRec, Vec3, WorldData
 
 INSTANCING = "EXT_mesh_gpu_instancing"
 _FLIP = np.diag([1.0, 1.0, -1.0])
-_SKIP_TYPES = {"zCVobLevelCompo"}  # parts of the static world mesh, already in world.glb
+# parts of the static world mesh (already in world.glb) and editor-only helpers invisible in game
+_SKIP_TYPES = {"zCVobLevelCompo", "zCVobStartpoint", "zCPFXController"}
+_SKIP_PREFIXES = ("INVISIBLE_",)
 
 
 @dataclass
@@ -27,6 +29,7 @@ class ModelsReport:
     models: int = 0
     instances: int = 0
     missing: list[str] = field(default_factory=list)
+    unhandled: dict[str, int] = field(default_factory=dict)  # visual extension → placements not exported
 
 
 def _quat_from_matrix(m: np.ndarray) -> tuple[float, float, float, float]:
@@ -67,8 +70,12 @@ def game_instance(pos: Vec3, rot: list[float]) -> tuple[tuple[float, float, floa
 
 
 def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: list[tuple[Vec3, list[float]]],
-               out_path: Path, tex_cache: dict | None = None) -> int:
-    """Write one instanced .glb for an MRM; returns the triangle count of one copy."""
+               out_path: Path, tex_cache: dict | None = None, texture_dir: str | None = None) -> int:
+    """Write one instanced .glb for an MRM; returns the triangle count of one copy.
+
+    With texture_dir (relative to out_path's folder), textures are written there once as PNG and
+    referenced by URI, so many models share one file; otherwise they are embedded.
+    """
     tex_cache = {} if tex_cache is None else tex_cache
     positions = np.array([(p.x, p.y, p.z) for p in mrm.positions], dtype=np.float64) / 100.0
     positions[:, 2] *= -1
@@ -114,7 +121,15 @@ def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: lis
                 image_idx[tex_name] = None
             else:
                 png, has_alpha = loaded
-                images.append(gl.Image(bufferView=blob.add(png), mimeType="image/png", name=tex_name))
+                if texture_dir is None:
+                    images.append(gl.Image(bufferView=blob.add(png), mimeType="image/png", name=tex_name))
+                else:
+                    uri = f"{texture_dir}/{tex_name.rsplit('.', 1)[0].lower()}.png"
+                    target = out_path.parent / uri
+                    if not target.exists():
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(png)
+                    images.append(gl.Image(uri=uri, mimeType="image/png", name=tex_name))
                 textures.append(gl.Texture(source=len(images) - 1, sampler=0))
                 image_idx[tex_name] = (len(textures) - 1, has_alpha)
         tex = image_idx[tex_name]
@@ -133,7 +148,7 @@ def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: lis
         primitives.append(gl.Primitive(attributes=attrs, indices=idx, material=len(materials) - 1))
 
     inst = [game_instance(p, r) for p, r in placements]
-    t_acc = accessor(np.array([t for t, _ in inst], dtype=np.float32), gl.VEC3, gl.FLOAT)
+    t_acc = accessor(np.array([t for t, _ in inst], dtype=np.float32), gl.VEC3, gl.FLOAT, minmax=True)
     r_acc = accessor(np.array([q for _, q in inst], dtype=np.float32), gl.VEC4, gl.FLOAT)
 
     data = blob.bytes()
@@ -163,13 +178,17 @@ _IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
 
 def collect_placements(wd: WorldData, catalog: dict[str, ItemDef], script_items: list[ItemRec]):
-    """visual (upper-case .3DS name) → (kind, [(pos, rot)])."""
+    """→ ({visual (upper-case .3DS name): (kind, [(pos, rot)])}, {unhandled extension: placements})."""
     out: dict[str, tuple[str, list]] = {}
+    unhandled: Counter = Counter()
     groups: dict[str, list] = defaultdict(list)
     kinds: dict[str, str] = {}
     for v in wd.vobs:
         vis = (v.visual or "").upper()
-        if not vis.endswith(".3DS") or not v.show_visual or v.vob_type in _SKIP_TYPES:
+        if not vis or not v.show_visual or v.vob_type in _SKIP_TYPES or vis.startswith(_SKIP_PREFIXES):
+            continue
+        if not vis.endswith(".3DS"):
+            unhandled[vis.rsplit(".", 1)[-1]] += 1
             continue
         groups[vis].append((v.pos, v.rot))
         kinds.setdefault(vis, "vob")
@@ -178,14 +197,17 @@ def collect_placements(wd: WorldData, catalog: dict[str, ItemDef], script_items:
     for i in wd.items + script_items:
         d = catalog.get(i.code)
         vis = (d.visual if d else "").upper()
-        if not vis.endswith(".3DS") or i.pos is None:
+        if not vis or i.pos is None:
+            continue
+        if not vis.endswith(".3DS"):
+            unhandled[vis.rsplit(".", 1)[-1]] += 1
             continue
         # script items sit on freepoints, which carry no usable orientation for items
         groups[vis].append((i.pos, rot_by_vob.get(i.vob_id, _IDENTITY) if i.vob_id else _IDENTITY))
         kinds.setdefault(vis, "item")
     for vis, places in groups.items():
         out[vis] = (kinds[vis], places)
-    return out
+    return out, dict(unhandled)
 
 
 def export_vob_models(vfs: zenkit.Vfs, wd: WorldData, catalog: dict[str, ItemDef], script_items: list[ItemRec],
@@ -193,18 +215,24 @@ def export_vob_models(vfs: zenkit.Vfs, wd: WorldData, catalog: dict[str, ItemDef
     report = ModelsReport()
     entries = []
     tex_cache: dict = {}
-    for vis, (kind, places) in sorted(collect_placements(wd, catalog, script_items).items()):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in list(out_dir.glob("*.glb")) + list((out_dir / "textures").glob("*.png")):
+        stale.unlink()
+    placements, unhandled = collect_placements(wd, catalog, script_items)
+    report.unhandled = unhandled
+    for vis, (kind, places) in sorted(placements.items()):
         node = vfs.find(vis[: -len(".3DS")] + ".MRM")
         if node is None:
             report.missing.append(vis)
             continue
         mrm = zenkit.MultiResolutionMesh.load(node.open())
         fname = vis[: -len(".3DS")].lower() + ".glb"
-        tris = mrm_to_glb(mrm, vfs, places, out_dir / fname, tex_cache)
+        tris = mrm_to_glb(mrm, vfs, places, out_dir / fname, tex_cache, texture_dir="textures")
         entries.append({"visual": vis, "file": fname, "kind": kind, "instances": len(places), "triangles": tris})
         report.models += 1
         report.instances += len(places)
     (out_dir / "index.json").write_text(json.dumps(
         {"frame": "same as world.glb: (x/100, y/100, -z/100) of game coordinates", "extension": INSTANCING,
-         "models": entries, "missing": report.missing}, ensure_ascii=False, indent=1), encoding="utf-8")
+         "models": entries, "missing": report.missing,
+         "unhandled": unhandled}, ensure_ascii=False, indent=1), encoding="utf-8")
     return report

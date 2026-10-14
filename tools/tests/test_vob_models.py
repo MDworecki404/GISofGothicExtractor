@@ -86,3 +86,41 @@ def test_royal_sorrel_model_has_all_ground_instances(exported_models, newworld):
     herb = next(m for m in index["models"] if m["visual"] == "ITPL_PERM_HERB.3DS")
     on_ground = sum(1 for i in wd.items if i.code == "ITPL_PERM_HERB")
     assert herb["instances"] >= on_ground
+
+
+def test_textures_are_shared_files_not_embedded(exported_models):
+    index = json.loads((exported_models / "index.json").read_text("utf-8"))
+    g = pygltflib.GLTF2().load(str(exported_models / index["models"][0]["file"]))
+    assert g.images and all(img.uri and img.uri.startswith("textures/") and img.bufferView is None for img in g.images)
+    assert all((exported_models / img.uri).exists() for img in g.images)
+    total = sum(p.stat().st_size for p in exported_models.rglob("*") if p.is_file())
+    assert total < 120 * 2**20
+
+
+def test_editor_only_helpers_are_skipped(exported_models):
+    index = json.loads((exported_models / "index.json").read_text("utf-8"))
+    assert not any(m["visual"].startswith("INVISIBLE_") for m in index["models"])
+
+
+def test_unhandled_visual_types_are_reported(exported_models):
+    index = json.loads((exported_models / "index.json").read_text("utf-8"))
+    assert index["unhandled"]["ASC"] > 0 and index["unhandled"]["MDS"] > 0
+
+
+def test_instance_translation_has_bounds(exported_models):
+    index = json.loads((exported_models / "index.json").read_text("utf-8"))
+    g = pygltflib.GLTF2().load(str(exported_models / index["models"][0]["file"]))
+    acc = g.accessors[g.nodes[0].extensions[INST]["attributes"]["TRANSLATION"]]
+    assert acc.min and acc.max and len(acc.min) == 3
+
+
+def test_game_instance_with_tilt():
+    c, s = math.cos(0.4), math.sin(0.4)
+    rot_x = np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    rot = (np.array(_rot_y(30)).reshape(3, 3) @ rot_x).ravel().tolist()
+    pos = (10.0, -20.0, 30.0)
+    t, q = game_instance(pos, rot)
+    local = np.array([50.0, -70.0, 90.0])
+    expected = (np.array(rot).reshape(3, 3) @ local + np.array(pos)) * np.array([1, 1, -1]) / 100
+    got = _quat_apply(q, local * np.array([1, 1, -1]) / 100) + np.array(t)
+    assert got == pytest.approx(expected, abs=1e-6)

@@ -43,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_models:
         print("[4/5] VOB and item models -> models/*.glb", flush=True)
         mr = export_vob_models(vfs, wd, catalog, script_items, args.out / "models")
-        print(f"  models: {mr.models}, instances: {mr.instances}, missing: {len(mr.missing)}", flush=True)
+        print(f"  models: {mr.models}, instances: {mr.instances}, missing: {len(mr.missing)}, "
+              f"not yet supported: {mr.unhandled}", flush=True)
     print("[5/5] writing GeoJSON", flush=True)
     report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, script_items, mesh)
     for k, v in report.counts.items():
