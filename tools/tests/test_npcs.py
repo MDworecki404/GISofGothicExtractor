@@ -41,15 +41,35 @@ def test_no_script_items_from_other_worlds(g2_vm, script_items):
     assert not any((i.code, i.spot) in di_only for i in script_items)
 
 
-def test_possible_amount_is_max_of_branches_not_sum(g2_vm, npcs):
+def _expected_inventory(vm, npc_code):
     from gothic_extract.daedalus_scan import reachable_calls, symbol_name
 
-    hodges = next(n for n in npcs if n.name == "Hodges")
-    biggest: dict[str, int] = {}
-    for c in reachable_calls(g2_vm, hodges.code, {"CREATEINVITEMS", "CREATEINVITEM", "EQUIPITEM"}):
-        code = (symbol_name(g2_vm, c.args[1]) or "").upper()
+    always, possible = {}, {}
+    for c in reachable_calls(vm, npc_code, {"CREATEINVITEMS", "CREATEINVITEM", "EQUIPITEM"},
+                             skip=["B_CREATEAMBIENTINV*"]):
+        code = (symbol_name(vm, c.args[1]) or "").upper()
+        if not code.startswith("IT"):
+            continue
         amount = c.args[2] if c.callee == "CREATEINVITEMS" and isinstance(c.args[2], int) else 1
         if c.conditional:
-            biggest[code] = max(biggest.get(code, 0), amount)
-    possible = {i.code: i.amount for i in hodges.inventory if i.certainty == "possible"}
-    assert possible and possible == {k: v for k, v in biggest.items() if k.startswith("IT")}
+            possible[code] = max(possible.get(code, 0), max(amount, 1))
+        else:
+            always[code] = always.get(code, 0) + max(amount, 1)
+    return always, possible
+
+
+def test_possible_amount_is_max_of_branches_not_sum():
+    from gothic_extract.npcs import InvItem, merge_inventory
+
+    inv = merge_inventory([("ITMI_GOLD", 5, True), ("ITMI_GOLD", 20, True), ("ITFO_APPLE", 2, False),
+                           ("ITFO_APPLE", 3, False), ("ITFO_APPLE", 4, True)])
+    assert inv == [InvItem("ITFO_APPLE", 5, "always"), InvItem("ITFO_APPLE", 4, "possible"),
+                   InvItem("ITMI_GOLD", 20, "possible")]
+
+
+def test_ambient_loot_tables_are_excluded(g2_vm, npcs):
+    # Hodges gets only random ambient loot (B_CreateAmbientInv_*), which is not useful on the map
+    hodges = next(n for n in npcs if n.name == "Hodges")
+    always, possible = _expected_inventory(g2_vm, hodges.code)
+    assert {i.code for i in hodges.inventory} == set(always) | set(possible)
+    assert not any(i.code == "ITFO_BOOZE" and i.certainty == "possible" for i in hodges.inventory)

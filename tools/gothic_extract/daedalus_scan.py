@@ -164,7 +164,8 @@ def find_calls(script, callee_names: set[str]) -> list[CallSite]:
     return [c for f in functions(script) for c in scan_function(script, f) if c.callee in names]
 
 
-def reachable_calls(script, root: str, callee_names: set[str]) -> list[CallSite]:
+def reachable_calls(script, root: str, callee_names: set[str], skip: list[str] = ()) -> list[CallSite]:
+    """Calls to callee_names reachable from root; functions matching the fnmatch patterns in skip are not entered."""
     names = {n.upper() for n in callee_names}
     start = script.get_symbol_by_name(root.upper())
     if start is None:
@@ -182,7 +183,7 @@ def reachable_calls(script, root: str, callee_names: set[str]) -> list[CallSite]
             if c.callee in names:
                 out.append(CallSite(c.caller, c.callee, c.args, c_cond, c.address))
             callee = script.get_symbol_by_name(c.callee)
-            if callee is not None and not callee.is_external and callee.address > 0:
+            if callee is not None and not callee.is_external and callee.address > 0 and not _matches(callee.name, skip):
                 visit(callee, c_cond)
 
     visit(start, False)

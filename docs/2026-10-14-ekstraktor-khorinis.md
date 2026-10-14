@@ -123,6 +123,7 @@ Kodowanie: stringi ze skryptów i ZEN są w **Windows-1250** → wszystkie pliki
 4. GeoJSON + JSON jako formaty danych; .glb z osadzonymi teksturami PNG.
 5. Wyniki w `output\`, kod w `tools\gothic_extract\`.
 6. **Losowy/warunkowy ekwipunek NPC** (helpery typu `B_CreateAmbientInv` rozgałęziające się na `Hlp_Random`, rozdziale, gildii): zbieramy przedmioty ze **wszystkich gałęzi** (eksploracja rozgałęzień w bajtkodzie zamiast pojedynczego przebiegu VM). Każdy przedmiot ekwipunku ma pole `certainty`: `"always"` (bezwarunkowy) albo `"possible"` (zależny od losowania/warunku). Uzasadnienie: anty-cel „przedmiot jest w grze, a nie ma go na mapie”.
+   **Zmiana (decyzja użytkownika, 2026-10-14):** przedmioty z losowych tablic łupu NPC z tłumu (`B_CreateAmbientInv_*`: jabłka, gorzałka, drobne złoto) są pomijane — nie są istotne dla aplikacji. W G2NK oznacza to, że żaden NPC nie ma już przedmiotów `possible`; reguła „maksimum z gałęzi” zostaje dla innych gier.
 7. **Rutyny NPC**: nie tylko `daily_routine`, ale **wszystkie funkcje `Rtn_<Nazwa>_<id>`** danego NPC (wykryte konwencją nazw + powiązane przez `Npc_ExchangeRoutine` w skryptach, jeśli da się je powiązać). Każdy punkt w `npc_routines.geojson` ma pole `routine` (np. `"START"`, `"FOLLOW"`, `"FARM"`) i `is_default: true/false`.
 
 ## 9. Ryzyka

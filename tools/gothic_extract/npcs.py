@@ -11,6 +11,8 @@ from .text import game_text
 from .world_data import PointResolver
 
 _INV_CALLS = {"CREATEINVITEM", "CREATEINVITEMS", "EQUIPITEM"}
+# Random filler loot shared by ambient NPCs (apples, booze, small gold); not useful on the map.
+_SKIP_INV_HELPERS = ["B_CREATEAMBIENTINV*"]
 _CHAPTER_RE = re.compile(r"(?:KAPITEL|_KAP)_?(\d)")
 
 
@@ -64,20 +66,29 @@ def _hhmm(h, m) -> str:
     return f"{h:02d}:{m:02d}" if isinstance(h, int) and isinstance(m, int) else "??:??"
 
 
-def _inventory(vm, code: str) -> list[InvItem]:
+def merge_inventory(entries: list[tuple[str, int, bool]]) -> list[InvItem]:
+    """(code, amount, conditional) call sites → inventory.
+
+    Unconditional amounts add up; conditional branches are usually mutually exclusive
+    (Hlp_Random, guild, chapter), so the largest one is reported.
+    """
     totals: dict[tuple[str, str], int] = defaultdict(int)
-    for c in reachable_calls(vm, code, _INV_CALLS):
+    for code, amount, conditional in entries:
+        amount = max(amount, 1)
+        key = (code, "possible" if conditional else "always")
+        totals[key] = max(totals[key], amount) if conditional else totals[key] + amount
+    return [InvItem(code, n, cert) for (code, cert), n in sorted(totals.items())]
+
+
+def _inventory(vm, code: str) -> list[InvItem]:
+    entries = []
+    for c in reachable_calls(vm, code, _INV_CALLS, skip=_SKIP_INV_HELPERS):
         item = symbol_name(vm, c.args[1] if len(c.args) > 1 else None)
         if not item or not item.upper().startswith("IT"):
             continue
         amount = c.args[2] if c.callee == "CREATEINVITEMS" and isinstance(c.args[2], int) else 1
-        key = (item.upper(), "possible" if c.conditional else "always")
-        if c.conditional:
-            # branches are usually mutually exclusive (Hlp_Random, guild, chapter): report the largest one
-            totals[key] = max(totals[key], max(amount, 1))
-        else:
-            totals[key] += max(amount, 1)
-    return [InvItem(code, n, cert) for (code, cert), n in sorted(totals.items())]
+        entries.append((item.upper(), amount, c.conditional))
+    return merge_inventory(entries)
 
 
 def _routine_points(vm, npc_id: int, default_fn: str | None, resolver: PointResolver, rtn_by_id) -> list[RoutinePoint]:
