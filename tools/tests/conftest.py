@@ -28,3 +28,17 @@ def newworld(g2_cfg, g2_vfs):
     from gothic_extract.world_data import load_world
 
     return load_world(g2_vfs, "NEWWORLD.ZEN", g2_cfg.version)
+
+
+@pytest.fixture(scope="session")
+def g2_vm(g2_cfg):
+    from gothic_extract.script_vm import make_vm
+
+    return make_vm(g2_cfg.script_dat)
+
+
+@pytest.fixture(scope="session")
+def catalog(g2_vm):
+    from gothic_extract.catalog import build_item_catalog
+
+    return build_item_catalog(g2_vm)
