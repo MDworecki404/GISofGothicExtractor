@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khorinis — podgląd danych</title>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.120.0/Build/Cesium/Cesium.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.120.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<style>
+  :root {
+    --bg: #17140f; --panel: #221d16ee; --line: #4a3f2f; --text: #eadfc8; --muted: #a8977a;
+    --accent: #e0a63a; --item: #7fd36b; --chest: #e0a63a; --npc: #6fb3ff; --script: #c58cff; --hit: #ff4d4d;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+  #cesium { position: absolute; inset: 0; }
+  #panel { position: absolute; top: 12px; left: 12px; width: 340px; max-height: calc(100% - 24px);
+    display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden; }
+  #panel header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0 0 8px; font-size: 16px; letter-spacing: .04em; color: var(--accent); }
+  input[type=search] { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--line); background: #0f0d0a; color: var(--text); font-size: 14px; }
+  .layers { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+  .layers label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  #results, #info { overflow: auto; padding: 8px 14px; }
+  #results:empty, #info:empty { display: none; }
+  #info { border-top: 1px solid var(--line); }
+  .summary { color: var(--muted); margin: 4px 0 8px; }
+  .hit { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+  .hit:hover { background: #ffffff12; }
+  .hit small { color: var(--muted); }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 10px; color: #111; white-space: nowrap; }
+  #info h2 { font-size: 15px; margin: 6px 0; color: var(--accent); }
+  #info table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #info td { padding: 2px 4px; border-bottom: 1px solid #ffffff10; vertical-align: top; }
+  #info td:last-child { text-align: right; color: var(--muted); }
+  #status { position: absolute; bottom: 10px; right: 12px; color: var(--muted); font-size: 12px; }
+  @media (max-width: 600px) { #panel { left: 8px; right: 8px; width: auto; max-height: 55%; } }
+</style>
+</head>
+<body>
+<div id="cesium"></div>
+<div id="panel">
+  <header>
+    <h1>KHORINIS · wyszukiwarka</h1>
+    <input id="q" type="search" list="names" placeholder="Szukaj przedmiotu, np. Szczaw królewski" autocomplete="off">
+    <datalist id="names"></datalist>
+    <div class="layers">
+      <label><input type="checkbox" data-layer="items" checked><span class="dot" style="background:var(--item)"></span>Przedmioty</label>
+      <label><input type="checkbox" data-layer="containers" checked><span class="dot" style="background:var(--chest)"></span>Skrzynie</label>
+      <label><input type="checkbox" data-layer="npcs"><span class="dot" style="background:var(--npc)"></span>NPC</label>
+      <label><input type="checkbox" data-layer="model" checked>Model świata</label>
+    </div>
+  </header>
+  <div id="results"></div>
+  <div id="info"></div>
+</div>
+<div id="status">Wczytywanie…</div>
+
+<script>
+const DATA = "../output/g2nk/newworld/";
+const C = Cesium;
+const css = (v) => C.Color.fromCssColorString(getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const COLORS = { zen: css("--item"), script: css("--script"), container: css("--chest"), npc: css("--npc"), hit: css("--hit") };
+const SOURCE_LABEL = { zen: "na ziemi", script: "skrypt", container: "w skrzyni", npc: "u NPC" };
+const TAG_COLOR = { zen: "--item", script: "--script", container: "--chest", npc: "--npc" };
+
+const viewer = new C.Viewer("cesium", {
+  baseLayer: false, baseLayerPicker: false, geocoder: false, animation: false, timeline: false,
+  homeButton: false, sceneModePicker: false, navigationHelpButton: false, infoBox: false,
+  selectionIndicator: false, fullscreenButton: false, scene3DOnly: true,
+});
+const scene = viewer.scene;
+scene.globe.show = false;                       // the world sits around the ellipsoid surface; no terrain
+scene.backgroundColor = C.Color.fromCssColorString("#17140f");
+scene.skyBox.show = false; scene.sun.show = false; scene.moon.show = false;
+// world origin is anchored at lon 0, lat 0: ECEF +X is up, +Y east, +Z north there
+scene.light = new C.DirectionalLight({ direction: C.Cartesian3.normalize(new C.Cartesian3(-1, 0.35, -0.45), new C.Cartesian3()), intensity: 2.2 });
+const origin = C.Transforms.eastNorthUpToFixedFrame(C.Cartesian3.fromDegrees(0, 0, 0));
+
+const layers = {
+  items: scene.primitives.add(new C.PointPrimitiveCollection()),
+  containers: scene.primitives.add(new C.PointPrimitiveCollection()),
+  npcs: scene.primitives.add(new C.PointPrimitiveCollection()),
+  model: null,
+};
+layers.npcs.show = false;
+const highlight = scene.primitives.add(new C.PointPrimitiveCollection());
+const labels = scene.primitives.add(new C.LabelCollection());
+
+const pos = (f) => C.Cartesian3.fromDegrees(...f.geometry.coordinates);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const index = new Map();   // item code → [{kind, feature, amount}]
+const nameToCode = new Map();
+let routines = [];
+
+function addHit(code, kind, feature, amount) {
+  if (!index.has(code)) index.set(code, []);
+  index.get(code).push({ kind, feature, amount });
+}
+
+async function load() {
+  const status = document.getElementById("status");
+  const get = (f) => fetch(DATA + f).then((r) => { if (!r.ok) throw new Error(f + ": " + r.status); return r.json(); });
+  const [catalog, items, containers, npcs, rtn] = await Promise.all(
+    ["catalog_items.json", "items.geojson", "containers.geojson", "npcs.geojson", "npc_routines.geojson"].map(get));
+  routines = rtn.features;
+
+  for (const f of items.features) {
+    const p = f.properties;
+    layers.items.add({ position: pos(f), color: COLORS[p.source], pixelSize: 6, id: { type: "item", f } });
+    addHit(p.code, p.source, f, p.amount);
+  }
+  for (const f of containers.features) {
+    layers.containers.add({ position: pos(f), color: COLORS.container, pixelSize: 8, outlineWidth: 1, outlineColor: C.Color.BLACK, id: { type: "container", f } });
+    for (const c of f.properties.contents) addHit(c.code, "container", f, c.amount);
+  }
+  for (const f of npcs.features) {
+    layers.npcs.add({ position: pos(f), color: COLORS.npc, pixelSize: 6, id: { type: "npc", f } });
+    for (const i of f.properties.inventory) addHit(i.code, "npc", f, i.amount);
+  }
+
+  const names = document.getElementById("names");
+  const opts = [];
+  for (const code of index.keys()) {
+    const name = catalog[code]?.name || code;
+    const label = `${name} (${code})`;
+    nameToCode.set(label.toLowerCase(), code);
+    nameToCode.set(name.toLowerCase(), nameToCode.get(name.toLowerCase()) || code);
+    nameToCode.set(code.toLowerCase(), code);
+    opts.push(label);
+  }
+  names.innerHTML = opts.sort((a, b) => a.localeCompare(b, "pl")).map((o) => `<option value="${esc(o)}">`).join("");
+  window.catalog = catalog;
+  status.textContent = `${items.features.length} przedmiotów · ${containers.features.length} skrzyń · ${npcs.features.length} NPC — wczytywanie modelu…`;
+
+  try {
+    layers.model = await C.Model.fromGltfAsync({ url: DATA + "world.glb", modelMatrix: origin, backFaceCulling: true,
+      // world.glb is (E, U, -N): only the standard Y-up → Z-up turn, no forward-axis rotation
+      upAxis: C.Axis.Y, forwardAxis: C.Axis.X });
+    scene.primitives.add(layers.model);
+    status.textContent = status.textContent.replace(" — wczytywanie modelu…", "");
+  } catch (e) {
+    status.textContent += " (brak world.glb)";
+    console.error(e);
+  }
+  const sphere = C.BoundingSphere.fromPoints([...Array(layers.items.length).keys()].map((i) => layers.items.get(i).position));
+  viewer.camera.flyToBoundingSphere(sphere, { duration: 0, offset: new C.HeadingPitchRange(0, C.Math.toRadians(-60), sphere.radius * 2.2) });
+}
+
+function search(text) {
+  highlight.removeAll(); labels.removeAll();
+  const results = document.getElementById("results");
+  const code = nameToCode.get(text.trim().toLowerCase());
+  if (!code) { results.innerHTML = text.trim() ? `<div class="summary">Brak wyników.</div>` : ""; return; }
+  const hits = index.get(code);
+  const total = hits.reduce((s, h) => s + (h.amount || 1), 0);
+  const name = window.catalog[code]?.name || code;
+  const count = (k) => hits.filter((h) => h.kind === k).length;
+  results.innerHTML = `<div class="summary"><b>${esc(name)}</b> — ${hits.length} miejsc, razem ${total} szt.<br>`
+    + ["zen", "container", "npc", "script"].filter((k) => count(k)).map((k) => `${SOURCE_LABEL[k]}: ${count(k)}`).join(" · ") + `</div>`
+    + hits.map((h, i) => `<div class="hit" data-i="${i}"><span class="tag" style="background:var(${TAG_COLOR[h.kind]})">${SOURCE_LABEL[h.kind]}</span>`
+      + `<span>${esc(h.kind === "npc" ? h.feature.properties.name : h.kind === "container" ? (h.feature.properties.name || "Skrzynia") : h.feature.properties.spot || name)}`
+      + ` <small>×${h.amount || 1}</small></span></div>`).join("");
+  const positions = hits.map((h) => {
+    const p = pos(h.feature);
+    highlight.add({ position: p, color: COLORS.hit, pixelSize: 13, outlineColor: C.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY, id: { type: h.kind === "zen" || h.kind === "script" ? "item" : h.kind, f: h.feature } });
+    return p;
+  });
+  results.querySelectorAll(".hit").forEach((el) => el.onclick = () => focus(hits[+el.dataset.i]));
+  const sphere = C.BoundingSphere.fromPoints(positions);
+  viewer.camera.flyToBoundingSphere(sphere, { duration: 1.2, offset: new C.HeadingPitchRange(0, C.Math.toRadians(-55), Math.max(sphere.radius * 2.5, 120)) });
+}
+
+function focus(h) {
+  viewer.camera.flyToBoundingSphere(new C.BoundingSphere(pos(h.feature), 1), { duration: 1, offset: new C.HeadingPitchRange(0, C.Math.toRadians(-35), 40) });
+  showInfo({ type: h.kind === "zen" || h.kind === "script" ? "item" : h.kind, f: h.feature });
+}
+
+function invTable(rows) {
+  return `<table>${rows.map((r) => `<tr><td>${esc(r.name || r.code)}</td><td>×${r.amount}</td></tr>`).join("")}</table>`;
+}
+
+function showInfo(obj) {
+  const info = document.getElementById("info");
+  labels.removeAll();
+  if (!obj) { info.innerHTML = ""; return; }
+  const p = obj.f.properties;
+  const coords = `<div class="summary">gra: ${p.game_pos.map((v) => Math.round(v)).join(", ")}</div>`;
+  if (obj.type === "item") {
+    info.innerHTML = `<h2>${esc(p.name || p.code)}</h2><div class="summary">${esc(p.category || "")} · ${SOURCE_LABEL[p.source]}${p.spot ? " · " + esc(p.spot) : ""}</div>${coords}`;
+  } else if (obj.type === "container") {
+    const lock = p.locked ? `zamknięta${p.key ? " · klucz: " + esc(p.key) : ""}${p.pick_string ? " · zamek: " + esc(p.pick_string) : ""}` : "otwarta";
+    info.innerHTML = `<h2>${esc(p.name || "Skrzynia")}</h2><div class="summary">${lock}</div>${invTable(p.contents)}${coords}`;
+  } else if (obj.type === "npc") {
+    info.innerHTML = `<h2>${esc(p.name)}</h2><div class="summary">${esc(p.guild_name)} · poziom ${p.level} · ${esc(p.code)}</div>`
+      + (p.inventory.length ? invTable(p.inventory) : `<div class="summary">Brak ekwipunku w skrypcie.</div>`) + coords;
+    const mine = routines.filter((r) => r.properties.npc_code === p.code && r.properties.is_default);
+    const seen = new Set();
+    for (const r of mine) {
+      const k = r.properties.waypoint;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const times = mine.filter((x) => x.properties.waypoint === k).map((x) => `${x.properties.start}–${x.properties.end}`);
+      labels.add({ position: pos(r), text: `${times.slice(0, 3).join(", ")}${times.length > 3 ? "…" : ""}`, font: "13px system-ui",
+        fillColor: COLORS.npc, outlineColor: C.Color.BLACK, outlineWidth: 3, style: C.LabelStyle.FILL_AND_OUTLINE,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY, pixelOffset: new C.Cartesian2(0, -14) });
+    }
+  }
+}
+
+new C.ScreenSpaceEventHandler(scene.canvas).setInputAction((e) => {
+  const picked = scene.pick(e.position);
+  showInfo(picked && picked.id && picked.id.f ? picked.id : null);
+}, C.ScreenSpaceEventType.LEFT_CLICK);
+
+const q = document.getElementById("q");
+q.addEventListener("change", () => search(q.value));
+q.addEventListener("keydown", (e) => { if (e.key === "Enter") search(q.value); });
+document.querySelectorAll("[data-layer]").forEach((cb) => cb.onchange = () => {
+  const l = layers[cb.dataset.layer];
+  if (l) l.show = cb.checked;
+});
+
+load().catch((e) => { document.getElementById("status").textContent = "Błąd: " + e.message; console.error(e); });
+</script>
+</body>
+</html>
