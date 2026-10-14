@@ -1,0 +1,81 @@
+# Dane geoportalu — paczka v1
+
+Dane jednego świata gry dla geoportalu, którego v1 służy do jednego: **wyszukać przedmiot albo
+unikatową postać i pokazać, gdzie są**. Paczkę generuje `python -m gothic_extract.geoportal`
+z pełnego wyniku ekstrakcji (`output/...`). Nie edytuj jej ręcznie, tylko wygeneruj ponownie.
+
+## Układ współrzędnych
+
+- Świat gry jest „przyklejony” do globusa w punkcie z `metadata.json → anchor`
+  (domyślnie lon 0°, lat 0°, h 0 m), w skali 1:1 (1 jednostka gry = 1 cm).
+- Wszystkie współrzędne w plikach to WGS84 `[lon, lat, h]`, `h` w metrach nad elipsoidą.
+  Część terenu leży poniżej 0 m, więc **wyłącz globus** albo test głębokości względem terenu.
+- `game_pos` we właściwościach to oryginalne współrzędne gry (cm), do przeliczeń i debugowania.
+
+## Modele 3D
+
+| Plik | Co | Uwagi |
+|---|---|---|
+| `world.glb` | siatka świata (teren, budynki) | metry, glTF Y-up, tekstury w środku |
+| `models/*.glb` | obiekty i przedmioty (drzewa, beczki, zioła…) | jeden plik na model, wszystkie wystąpienia jako instancje `EXT_mesh_gpu_instancing` |
+| `models/index.json` | lista modeli: plik, rodzaj (`vob`/`item`), liczba instancji | także `unhandled`: typy obiektów jeszcze nieeksportowanych |
+| `models/textures/*.png` | wspólne tekstury modeli | odwołania przez URI z plików `.glb` |
+
+Wszystkie `.glb` mają ten sam układ: glTF = (Wschód, Góra, −Północ) w metrach względem kotwicy.
+W CesiumJS wczytuj je **z tą samą macierzą i osiami**, inaczej Cesium obróci model:
+
+```js
+const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(lon0, lat0, h0));
+const model = await Cesium.Model.fromGltfAsync({
+  url: "world.glb", modelMatrix, upAxis: Cesium.Axis.Y, forwardAxis: Cesium.Axis.X,
+});
+```
+
+## `search_index.json` — wyszukiwarka
+
+```json
+{ "version": 1, "entries": [
+  { "id": "item:ITPL_PERM_HERB", "type": "item", "code": "ITPL_PERM_HERB",
+    "name": "Szczaw królewski", "category": "Rośliny", "total": 11,
+    "places": [ { "kind": "ground", "lon": 0.0019, "lat": 0.0036, "h": 79.5,
+                  "label": "na ziemi", "ref": "item-123", "amount": 1 } ] },
+  { "id": "character:VLK_412_HARAD", "type": "character", "code": "VLK_412_HARAD",
+    "name": "Harad", "category": "VLK", "level": 30,
+    "places": [ { "kind": "spawn", "label": "pojawia się (NW_CITY_…)", "chapter": null, … },
+                { "kind": "routine", "label": "07:00–21:30 (z przerwami)", "routine": "START",
+                  "is_default": true, "actions": ["TA_SMITH_ANVIL", …], … } ] }
+] }
+```
+
+`kind` miejsca:
+
+| `kind` | dla | znaczenie |
+|---|---|---|
+| `ground` | przedmiot | leży w świecie od początku gry |
+| `script` | przedmiot | wstawiany przez skrypt przy starcie świata |
+| `container` | przedmiot | w skrzyni; `label` mówi, czy zamknięta, klucz, kombinacja zamka |
+| `npc` | przedmiot | w ekwipunku NPC (także zwykłych NPC i potworów); `ref` → punkt NPC |
+| `spawn` | postać | gdzie skrypt wstawia postać do świata (`chapter`: rozdział, jeśli później niż na starcie) |
+| `routine` | postać | gdzie postać przebywa w ciągu dnia; `is_default: false` = rutyna po zadaniu/zdarzeniu (nazwa w `routine`) |
+
+`amount` = liczba sztuk w tym miejscu. `ref` = `id` obiektu w odpowiedniej warstwie GeoJSON.
+
+Etykieta rutyny łączy przyległe przedziały czasu; gdy przerw jest dużo, pokazuje zakres
+„od–do (z przerwami)”. Pełna lista przedziałów jest w `character_places.geojson → times`.
+
+Postać jest „unikatowa”:
+- **ludzie** — imię nosi dokładnie jedna postać w tym świecie (Harad, Lothar, Wilk-najemnik — tak;
+  Bandyta, Strażnik miejski — nie);
+- **potwory** — imię jest jedyne w całej grze i potwór jest wstawiony raz (Pan cienia Inubis — tak;
+  wilki, dziki, chrząszcze — nie).
+
+## Warstwy GeoJSON
+
+| Plik | Obiekt | Najważniejsze pola |
+|---|---|---|
+| `items.geojson` | przedmiot w świecie | `code`, `name`, `category`, `amount`, `source` (`zen`/`script`), `spot` |
+| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]` |
+| `characters.geojson` | unikatowa postać (miejsce pojawienia się) | `code`, `name`, `guild_name`, `level`, `chapter`, `inventory` |
+| `character_places.geojson` | miejsce z rutyny postaci | `npc_code`, `npc_name`, `routine`, `is_default`, `waypoint`, `times`, `actions` |
+
+Wszystkie teksty są po polsku, w UTF-8.

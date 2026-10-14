@@ -1,10 +1,11 @@
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 import zenkit
 from zenkit.daedalus.npc import NpcInstanceNameSlot
 
+from .catalog import instances_of
 from .daedalus_scan import find_calls, functions, reachable_calls, scan_function, symbol_name
 from .records import ItemRec, Vec3
 from .text import game_text
@@ -47,6 +48,8 @@ class NpcRec:
     pos: Vec3 | None
     inventory: list[InvItem] = field(default_factory=list)
     routines: list[RoutinePoint] = field(default_factory=list)
+    name_unique_in_game: bool = False  # no other NPC instance in the whole script has this name
+    is_human: bool = False  # guild below GIL_SEPERATOR_HUM (people, not monsters/orcs)
 
 
 def _chapter(func_name: str) -> int | None:
@@ -119,8 +122,20 @@ def _routines_by_id(vm) -> dict[int, list]:
     return out
 
 
+def game_name_counts(vm: zenkit.DaedalusVm) -> Counter:
+    """How many NPC instances across all worlds share each display name."""
+    out: Counter = Counter()
+    for sym in instances_of(vm, "C_NPC"):
+        npc = vm.init_instance(sym, zenkit.DaedalusInstanceType.NPC)
+        out[game_text(npc.get_name(NpcInstanceNameSlot.SLOT0))] += 1
+    return out
+
+
 def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[str] = frozenset()) -> list[NpcRec]:
     """exclude: names of functions whose inserts belong to other worlds."""
+    name_counts = game_name_counts(vm)
+    sep = vm.get_symbol_by_name("GIL_SEPERATOR_HUM")
+    human_below = sep.get_int() if sep is not None else 16
     known = resolver.names()
     guilds = _guild_names(vm)
     rtn_by_id = _routines_by_id(vm)
@@ -146,7 +161,8 @@ def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[st
             )
         name, guild, level, inv, routines = cache[code]
         out.append(NpcRec(code, name, guild, guilds.get(guild, str(guild)), level, wp.upper(), c.caller,
-                          _chapter(c.caller), resolver.resolve(wp), inv, routines))
+                          _chapter(c.caller), resolver.resolve(wp), inv, routines, name_counts[name] == 1,
+                          0 < guild < human_below))
     return out
 
 

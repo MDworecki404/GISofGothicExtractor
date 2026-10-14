@@ -77,7 +77,8 @@ def write_outputs(out_dir: Path, cfg: GameConfig, world_name: str, wd: WorldData
         npc_feats.append(b.point(n.pos, {
             "id": f"npc-{k}", "code": n.code, "name": n.name, "category": "NPC", "guild": n.guild,
             "guild_name": n.guild_name, "level": n.level, "chapter": n.chapter, "insert_waypoint": n.insert_waypoint,
-            "insert_function": n.insert_function, "source": "script",
+            "insert_function": n.insert_function, "name_unique_in_game": n.name_unique_in_game,
+            "is_human": n.is_human, "source": "script",
             "inventory": [{**b.item_info(i.code), "amount": i.amount, "certainty": i.certainty} for i in n.inventory],
             "routines": [{key: v for key, v in asdict(r).items() if key != "pos"} for r in n.routines],
         }))
