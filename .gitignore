@@ -1,0 +1,6 @@
+Gothic/
+Gothic II/
+output/
+__pycache__/
+.pytest_cache/
+.superpowers/
