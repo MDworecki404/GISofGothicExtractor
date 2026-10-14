@@ -1,0 +1,23 @@
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from gothic_extract.config import load_game  # noqa: E402
+
+
+@pytest.fixture(scope="session")
+def g2_cfg():
+    cfg = load_game("g2nk")
+    if not cfg.root.exists():
+        pytest.skip("Gothic II folder not present")
+    return cfg
+
+
+@pytest.fixture(scope="session")
+def g2_vfs(g2_cfg):
+    from gothic_extract.vfs import open_vfs
+
+    return open_vfs(g2_cfg)

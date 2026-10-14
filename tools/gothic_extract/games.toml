@@ -1,0 +1,17 @@
+# Paths are relative to the project folder (parent of tools/).
+
+[g2nk]
+root = "Gothic II"
+version = "GOTHIC2"
+vdf_glob = "Data/*.vdf"
+vdf_exclude = ["Speech*", "Sounds*"]
+script_dat = "_work/Data/Scripts/_compiled/GOTHIC.DAT"
+anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
+
+[g1]
+root = "Gothic"
+version = "GOTHIC1"
+vdf_glob = "Data/*.vdf"
+vdf_exclude = ["Speech*", "sound*"]
+script_dat = "_work/DATA/scripts/_compiled/Gothic.dat"
+anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
