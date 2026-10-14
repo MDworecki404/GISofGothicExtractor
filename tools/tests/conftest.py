@@ -42,3 +42,25 @@ def catalog(g2_vm):
     from gothic_extract.catalog import build_item_catalog
 
     return build_item_catalog(g2_vm)
+
+
+@pytest.fixture(scope="session")
+def resolver(newworld):
+    from gothic_extract.world_data import PointResolver
+
+    _, wd = newworld
+    return PointResolver(wd.waypoints, wd.freepoints)
+
+
+@pytest.fixture(scope="session")
+def npcs(g2_vm, resolver):
+    from gothic_extract.npcs import extract_npcs
+
+    return extract_npcs(g2_vm, resolver)
+
+
+@pytest.fixture(scope="session")
+def script_items(g2_vm, resolver):
+    from gothic_extract.npcs import extract_script_items
+
+    return extract_script_items(g2_vm, resolver)

@@ -1,0 +1,143 @@
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+
+import zenkit
+from zenkit.daedalus.npc import NpcInstanceNameSlot
+
+from .daedalus_scan import find_calls, functions, reachable_calls, scan_function, symbol_name
+from .records import ItemRec, Vec3
+from .text import game_text
+from .world_data import PointResolver
+
+_INV_CALLS = {"CREATEINVITEM", "CREATEINVITEMS", "EQUIPITEM"}
+_CHAPTER_RE = re.compile(r"(?:KAPITEL|_KAP)_?(\d)")
+
+
+@dataclass
+class InvItem:
+    code: str
+    amount: int
+    certainty: str  # "always" | "possible"
+
+
+@dataclass
+class RoutinePoint:
+    routine: str
+    is_default: bool
+    start: str
+    end: str
+    action: str
+    waypoint: str
+    pos: Vec3 | None
+
+
+@dataclass
+class NpcRec:
+    code: str
+    name: str
+    guild: int
+    guild_name: str
+    level: int
+    insert_waypoint: str
+    insert_function: str
+    chapter: int | None
+    pos: Vec3 | None
+    inventory: list[InvItem] = field(default_factory=list)
+    routines: list[RoutinePoint] = field(default_factory=list)
+
+
+def _chapter(func_name: str) -> int | None:
+    m = _CHAPTER_RE.search(func_name)
+    return int(m.group(1)) if m else None
+
+
+def _guild_names(script) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for s in script.symbols:
+        if s.name.startswith("GIL_") and s.is_const and s.type == zenkit.DaedalusDataType.INT and "." not in s.name:
+            out.setdefault(s.get_int(), s.name[4:])
+    return out
+
+
+def _hhmm(h, m) -> str:
+    return f"{h:02d}:{m:02d}" if isinstance(h, int) and isinstance(m, int) else "??:??"
+
+
+def _inventory(vm, code: str) -> list[InvItem]:
+    totals: dict[tuple[str, str], int] = defaultdict(int)
+    for c in reachable_calls(vm, code, _INV_CALLS):
+        item = symbol_name(vm, c.args[1] if len(c.args) > 1 else None)
+        if not item or not item.upper().startswith("IT"):
+            continue
+        amount = c.args[2] if c.callee == "CREATEINVITEMS" and isinstance(c.args[2], int) else 1
+        totals[(item.upper(), "possible" if c.conditional else "always")] += max(amount, 1)
+    return [InvItem(code, n, cert) for (code, cert), n in sorted(totals.items())]
+
+
+def _routine_points(vm, npc_id: int, default_fn: str | None, resolver: PointResolver, rtn_by_id) -> list[RoutinePoint]:
+    out = []
+    for fn in rtn_by_id.get(npc_id, []):
+        routine = fn.name[len("RTN_"): -len(f"_{npc_id}")]
+        for c in scan_function(vm, fn):
+            if c.callee == "TA_MIN" and len(c.args) >= 7:
+                h1, m1, h2, m2, action, wp = c.args[1], c.args[2], c.args[3], c.args[4], symbol_name(vm, c.args[5]), c.args[6]
+            elif c.callee.startswith("TA_") and len(c.args) == 5:
+                h1, m1, h2, m2, wp = c.args
+                action = c.callee
+            else:
+                continue
+            wp = wp if isinstance(wp, str) else ""
+            out.append(RoutinePoint(routine, fn.name == default_fn, _hhmm(h1, m1), _hhmm(h2, m2),
+                                    action or "", wp, resolver.resolve(wp)))
+    return out
+
+
+def _routines_by_id(vm) -> dict[int, list]:
+    out: dict[int, list] = defaultdict(list)
+    rx = re.compile(r"^RTN_.+_(\d+)$")
+    for f in functions(vm):
+        m = rx.match(f.name)
+        if m:
+            out[int(m.group(1))].append(f)
+    return out
+
+
+def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver) -> list[NpcRec]:
+    known = resolver.names()
+    guilds = _guild_names(vm)
+    rtn_by_id = _routines_by_id(vm)
+    cache: dict[str, tuple] = {}
+    out = []
+    for c in find_calls(vm, {"WLD_INSERTNPC"}):
+        code = symbol_name(vm, c.args[0])
+        wp = c.args[1]
+        if not code or not isinstance(wp, str) or wp.upper() not in known:
+            continue
+        code = code.upper()
+        if code not in cache:
+            npc = vm.init_instance(code, zenkit.DaedalusInstanceType.NPC)
+            rtn = vm.get_symbol_by_index(npc.daily_routine) if npc.daily_routine > 0 else None
+            cache[code] = (
+                game_text(npc.get_name(NpcInstanceNameSlot.SLOT0)),
+                npc.guild,
+                npc.level,
+                _inventory(vm, code),
+                _routine_points(vm, npc.id, rtn.name if rtn else None, resolver, rtn_by_id),
+            )
+        name, guild, level, inv, routines = cache[code]
+        out.append(NpcRec(code, name, guild, guilds.get(guild, str(guild)), level, wp.upper(), c.caller,
+                          _chapter(c.caller), resolver.resolve(wp), inv, routines))
+    return out
+
+
+def extract_script_items(vm: zenkit.DaedalusVm, resolver: PointResolver) -> list[ItemRec]:
+    known = resolver.names()
+    out = []
+    for c in find_calls(vm, {"WLD_INSERTITEM"}):
+        code = symbol_name(vm, c.args[0])
+        spot = c.args[1]
+        if not code or not isinstance(spot, str) or spot.upper() not in known:
+            continue
+        out.append(ItemRec(code.upper(), 1, resolver.resolve(spot), "script", None, spot.upper()))
+    return out
