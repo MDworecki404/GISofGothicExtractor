@@ -1,3 +1,5 @@
+import re
+
 import zenkit
 
 from .records import ContainerRec, ItemRec, Vec3, VobRec, WayEdgeRec, WaypointRec, WorldData
@@ -6,9 +8,9 @@ T = zenkit.VobType
 
 
 def parse_contents(s: str) -> list[tuple[str, int]]:
-    """Parse oCMobContainer.contents, e.g. 'ItMi_Gold:50, ItFo_Apple' → [('ITMI_GOLD', 50), ('ITFO_APPLE', 1)]."""
+    """Parse oCMobContainer.contents, e.g. 'ItMi_Gold:50, ItFo_Apple;ItPo_Health_01' → [('ITMI_GOLD', 50), ('ITFO_APPLE', 1)]."""
     out = []
-    for part in (s or "").split(","):
+    for part in re.split(r"[,;]", s or ""):
         part = part.strip()
         if not part:
             continue

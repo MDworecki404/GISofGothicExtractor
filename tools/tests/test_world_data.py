@@ -9,6 +9,12 @@ def test_parse_contents_variants():
     assert parse_contents("") == []
 
 
+def test_parse_contents_semicolons():
+    # real NEWWORLD containers mix ',' and ';'
+    assert parse_contents("ItRw_Arrow:17,ItMi_Gold:20;ItPo_Health_03") == [
+        ("ITRW_ARROW", 17), ("ITMI_GOLD", 20), ("ITPO_HEALTH_03", 1)]
+
+
 def test_world_has_expected_counts(newworld):
     _, wd = newworld
     assert len(wd.vobs) > 5000

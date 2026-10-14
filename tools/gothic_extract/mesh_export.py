@@ -1,7 +1,8 @@
 """Export the static world mesh to binary glTF (metres, Y-up, embedded PNG textures).
 
 Axis convention: glTF = (x/100, y/100, -z/100). Negating Z turns Gothic's
-left-handed frame into glTF's right-handed one, so triangle winding is reversed.
+left-handed frame into glTF's right-handed one; that mirror also turns Gothic's
+clockwise front faces into glTF's counter-clockwise ones, so indices keep their order.
 In ENU terms a glTF point is (East, Up, -North).
 """
 import io
@@ -99,7 +100,6 @@ def export_world_glb(world: zenkit.World, vfs: zenkit.Vfs, out_path: Path) -> Me
     normals[:, 2] *= -1
 
     P, F, M = _triangulate(mesh)
-    P, F = P[:, ::-1], F[:, ::-1]  # winding flips with the handedness change
 
     stats = MeshStats(triangles=int(len(P)))
     blob = _Blob()

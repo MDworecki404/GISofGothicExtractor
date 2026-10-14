@@ -19,3 +19,37 @@ def test_inventory_certainty_values(npcs):
 
 def test_script_items_have_positions(script_items):
     assert script_items and all(i.source == "script" and i.pos for i in script_items)
+
+
+def test_no_npcs_from_other_worlds(npcs):
+    callers = {n.insert_function for n in npcs}
+    assert not any(c.startswith("STARTUP_DRAGONISLAND") for c in callers)
+    assert "B_ENTER_OLDWORLD_KAPITEL_4" not in callers
+
+
+def test_no_script_items_from_other_worlds(g2_vm, script_items):
+    from gothic_extract.daedalus_scan import find_calls, symbol_name
+
+    def pairs(prefixes):
+        return {(symbol_name(g2_vm, c.args[0]).upper(), c.args[1].upper())
+                for c in find_calls(g2_vm, {"WLD_INSERTITEM"})
+                if c.caller.startswith(prefixes) and isinstance(c.args[1], str)}
+
+    # the ship freepoints are shared with Khorinis' own STARTUP_NEWWORLD_* items
+    di_only = pairs(("STARTUP_DRAGONISLAND", "ENTER_DI_")) - pairs(("STARTUP_NEWWORLD",))
+    assert di_only
+    assert not any((i.code, i.spot) in di_only for i in script_items)
+
+
+def test_possible_amount_is_max_of_branches_not_sum(g2_vm, npcs):
+    from gothic_extract.daedalus_scan import reachable_calls, symbol_name
+
+    hodges = next(n for n in npcs if n.name == "Hodges")
+    biggest: dict[str, int] = {}
+    for c in reachable_calls(g2_vm, hodges.code, {"CREATEINVITEMS", "CREATEINVITEM", "EQUIPITEM"}):
+        code = (symbol_name(g2_vm, c.args[1]) or "").upper()
+        amount = c.args[2] if c.callee == "CREATEINVITEMS" and isinstance(c.args[2], int) else 1
+        if c.conditional:
+            biggest[code] = max(biggest.get(code, 0), amount)
+    possible = {i.code: i.amount for i in hodges.inventory if i.certainty == "possible"}
+    assert possible and possible == {k: v for k, v in biggest.items() if k.startswith("IT")}

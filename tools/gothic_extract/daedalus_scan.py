@@ -34,9 +34,18 @@ class _Ins:
     immediate: int
 
 
+_CODE_SIZE: dict[int, int] = {}
+
+
+def set_code_size(script, size: int) -> None:
+    """Record the bytecode length so the last function is not decoded past the end."""
+    _CODE_SIZE[id(script)] = size
+
+
 class _Index:
     def __init__(self, script: zenkit.DaedalusScript):
         self.script = script
+        self.code_size = _CODE_SIZE.get(id(script))
         code_syms = [
             s for s in script.symbols
             if s.type in (DT.FUNCTION, DT.INSTANCE, DT.PROTOTYPE) and not s.is_external and s.address > 0
@@ -49,19 +58,22 @@ class _Index:
 
     def end_of(self, start: int) -> int:
         i = bisect_right(self.starts, start)
-        return self.starts[i] if i < len(self.starts) else start + 1_000_000
+        if i < len(self.starts):
+            return self.starts[i]
+        return self.code_size if self.code_size and self.code_size > start else start + 1_000_000
 
     def code(self, sym: zenkit.DaedalusSymbol) -> list[_Ins]:
         if sym.address in self._code:
             return self._code[sym.address]
         out, a, end = [], sym.address, self.end_of(sym.address)
+        start_is_last = sym.address == self.starts[-1]
         while a < end:
             ins = self.script.get_instruction(a)
             out.append(_Ins(a, ins.op, ins.symbol, ins.immediate))
             if ins.size <= 0:
                 break
             a += ins.size
-            if ins.op == Op.RSR and a >= end:
+            if ins.op == Op.RSR and (a >= end or self.code_size is None and start_is_last):
                 break
         self._code[sym.address] = out
         return out
@@ -105,7 +117,25 @@ def _callee(script, ins: _Ins):
 
 
 def _cond_ranges(code: list[_Ins]) -> list[tuple[int, int]]:
-    return [(i.address, i.immediate) for i in code if i.op == Op.BZ and i.immediate > i.address]
+    """Address ranges (start, end) that do not run on every path through the function.
+
+    - forward BZ: the if-body between the jump and its target;
+    - forward B: the else-body it jumps over;
+    - an RSR inside an if-body (early return): everything after that if-body.
+    """
+    ranges = [(i.address, i.immediate) for i in code if i.op in (Op.BZ, Op.B) and i.immediate > i.address]
+    if_bodies = [(i.address, i.immediate) for i in code if i.op == Op.BZ and i.immediate > i.address]
+    end = code[-1].address + 1 if code else 0
+    for r in code:
+        if r.op == Op.RSR:
+            for b, t in if_bodies:
+                if b < r.address < t:
+                    ranges.append((t - 1, end))
+    return ranges
+
+
+def is_conditional(code: list[_Ins], address: int) -> bool:
+    return any(b < address < t for b, t in _cond_ranges(code))
 
 
 def scan_function(script, sym) -> list[CallSite]:
@@ -162,6 +192,43 @@ def reachable_calls(script, root: str, callee_names: set[str]) -> list[CallSite]
         if c.address not in best or (best[c.address].conditional and not c.conditional):
             best[c.address] = c
     return list(best.values())
+
+
+def _matches(name: str, patterns: list[str]) -> bool:
+    import fnmatch
+
+    return any(fnmatch.fnmatchcase(name, p.upper()) for p in patterns)
+
+
+def reachable_functions(script, root_patterns: list[str], stop_patterns: list[str] = ()) -> set[str]:
+    """Names of all code symbols reachable through calls from functions matching the fnmatch patterns.
+
+    Traversal does not enter functions matching stop_patterns (e.g. another world's entry points
+    called from a shared chapter-change dispatcher).
+    """
+    todo = [f for f in functions(script) if _matches(f.name, root_patterns)]
+    seen: set[str] = set()
+    while todo:
+        f = todo.pop()
+        if f.name in seen:
+            continue
+        seen.add(f.name)
+        for c in scan_function(script, f):
+            callee = script.get_symbol_by_name(c.callee)
+            if (callee is not None and not callee.is_external and callee.address > 0 and callee.name not in seen
+                    and not _matches(callee.name, stop_patterns)):
+                todo.append(callee)
+    return seen
+
+
+def other_world_functions(script, world_roots: dict[str, list[str]], world: str) -> set[str]:
+    """Functions reachable from other worlds' entry points but not from this world's."""
+    world = world.upper()
+    my_pats = world_roots.get(world, [])
+    other_pats = [p for w, pats in world_roots.items() if w != world for p in pats]
+    mine = reachable_functions(script, my_pats, other_pats)
+    others = reachable_functions(script, other_pats, my_pats)
+    return others - mine
 
 
 def symbol_name(script, value: int | str | None) -> str | None:

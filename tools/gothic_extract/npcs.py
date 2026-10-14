@@ -71,7 +71,12 @@ def _inventory(vm, code: str) -> list[InvItem]:
         if not item or not item.upper().startswith("IT"):
             continue
         amount = c.args[2] if c.callee == "CREATEINVITEMS" and isinstance(c.args[2], int) else 1
-        totals[(item.upper(), "possible" if c.conditional else "always")] += max(amount, 1)
+        key = (item.upper(), "possible" if c.conditional else "always")
+        if c.conditional:
+            # branches are usually mutually exclusive (Hlp_Random, guild, chapter): report the largest one
+            totals[key] = max(totals[key], max(amount, 1))
+        else:
+            totals[key] += max(amount, 1)
     return [InvItem(code, n, cert) for (code, cert), n in sorted(totals.items())]
 
 
@@ -103,13 +108,16 @@ def _routines_by_id(vm) -> dict[int, list]:
     return out
 
 
-def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver) -> list[NpcRec]:
+def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[str] = frozenset()) -> list[NpcRec]:
+    """exclude: names of functions whose inserts belong to other worlds."""
     known = resolver.names()
     guilds = _guild_names(vm)
     rtn_by_id = _routines_by_id(vm)
     cache: dict[str, tuple] = {}
     out = []
     for c in find_calls(vm, {"WLD_INSERTNPC"}):
+        if c.caller in exclude:
+            continue
         code = symbol_name(vm, c.args[0])
         wp = c.args[1]
         if not code or not isinstance(wp, str) or wp.upper() not in known:
@@ -131,10 +139,12 @@ def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver) -> list[NpcRec]
     return out
 
 
-def extract_script_items(vm: zenkit.DaedalusVm, resolver: PointResolver) -> list[ItemRec]:
+def extract_script_items(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[str] = frozenset()) -> list[ItemRec]:
     known = resolver.names()
     out = []
     for c in find_calls(vm, {"WLD_INSERTITEM"}):
+        if c.caller in exclude:
+            continue
         code = symbol_name(vm, c.args[0])
         spot = c.args[1]
         if not code or not isinstance(spot, str) or spot.upper() not in known:

@@ -24,3 +24,31 @@ def test_bbox_matches_waynet(exported, newworld):
     _, wd = newworld
     xs = [w.pos[0] / 100 for w in wd.waypoints]
     assert stats.bbox_min[0] <= min(xs) and max(xs) <= stats.bbox_max[0]
+
+
+def _read(g, blob, acc_idx, dtype, width):
+    import numpy as np
+
+    acc = g.accessors[acc_idx]
+    view = g.bufferViews[acc.bufferView]
+    arr = np.frombuffer(blob, dtype=dtype, count=acc.count * width, offset=view.byteOffset)
+    return arr.reshape(acc.count, width) if width > 1 else arr
+
+
+def test_triangles_face_along_normals(exported):
+    import numpy as np
+
+    path, _ = exported
+    g = pygltflib.GLTF2().load(str(path))
+    blob = g.binary_blob()
+    agree = total = 0
+    for prim in g.meshes[0].primitives[:200]:
+        pos = _read(g, blob, prim.attributes.POSITION, np.float32, 3)
+        nrm = _read(g, blob, prim.attributes.NORMAL, np.float32, 3)
+        idx = _read(g, blob, prim.indices, np.uint32, 1).reshape(-1, 3)
+        a, b, c = pos[idx[:, 0]], pos[idx[:, 1]], pos[idx[:, 2]]
+        face = np.cross(b - a, c - a)
+        dots = (face * nrm[idx[:, 0]]).sum(axis=1)
+        agree += int((dots > 0).sum())
+        total += len(dots)
+    assert agree / total > 0.95

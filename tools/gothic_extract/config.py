@@ -1,6 +1,6 @@
 import fnmatch
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import zenkit
@@ -19,6 +19,7 @@ class GameConfig:
     anchor_lon: float
     anchor_lat: float
     anchor_h: float
+    world_roots: dict[str, list[str]] = field(default_factory=dict)
 
 
 def _list_vdfs(root: Path, pattern: str, exclude: list[str]) -> list[str]:
@@ -44,6 +45,7 @@ def load_game(key: str) -> GameConfig:
         anchor_lon=float(anchor.get("lon", 0.0)),
         anchor_lat=float(anchor.get("lat", 0.0)),
         anchor_h=float(anchor.get("h", 0.0)),
+        world_roots={k.upper(): v for k, v in entry.get("world_roots", {}).items()},
     )
 
 

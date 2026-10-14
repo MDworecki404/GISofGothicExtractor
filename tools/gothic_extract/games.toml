@@ -8,6 +8,14 @@ vdf_exclude = ["Speech*", "Sounds*"]
 script_dat = "_work/Data/Scripts/_compiled/GOTHIC.DAT"
 anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
 
+# Script entry points per world (fnmatch patterns). Inserts reachable only from
+# another world's entry points are excluded from a world's output.
+[g2nk.world_roots]
+NEWWORLD = ["STARTUP_NEWWORLD", "INIT_NEWWORLD", "B_ENTER_NEWWORLD*"]
+OLDWORLD = ["STARTUP_OLDWORLD", "INIT_OLDWORLD", "B_ENTER_OLDWORLD*"]
+ADDONWORLD = ["STARTUP_ADDONWORLD", "INIT_ADDONWORLD", "B_ENTER_ADDONWORLD*"]
+DRAGONISLAND = ["STARTUP_DRAGONISLAND", "INIT_DRAGONISLAND", "B_ENTER_DRAGONISLAND*", "ENTER_DI_*"]
+
 [g1]
 root = "Gothic"
 version = "GOTHIC1"

@@ -53,14 +53,21 @@ def resolver(newworld):
 
 
 @pytest.fixture(scope="session")
-def npcs(g2_vm, resolver):
-    from gothic_extract.npcs import extract_npcs
+def other_world_fns(g2_vm, g2_cfg):
+    from gothic_extract.daedalus_scan import other_world_functions
 
-    return extract_npcs(g2_vm, resolver)
+    return other_world_functions(g2_vm, g2_cfg.world_roots, "NEWWORLD")
 
 
 @pytest.fixture(scope="session")
-def script_items(g2_vm, resolver):
+def npcs(g2_vm, resolver, other_world_fns):
+    from gothic_extract.npcs import extract_npcs
+
+    return extract_npcs(g2_vm, resolver, other_world_fns)
+
+
+@pytest.fixture(scope="session")
+def script_items(g2_vm, resolver, other_world_fns):
     from gothic_extract.npcs import extract_script_items
 
-    return extract_script_items(g2_vm, resolver)
+    return extract_script_items(g2_vm, resolver, other_world_fns)
