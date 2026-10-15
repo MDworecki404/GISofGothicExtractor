@@ -36,7 +36,7 @@ const model = await Cesium.Model.fromGltfAsync({
 ```json
 { "version": 1, "entries": [
   { "id": "item:ITPL_PERM_HERB", "type": "item", "code": "ITPL_PERM_HERB",
-    "name": "Szczaw królewski", "category": "Rośliny", "total": 11,
+    "name": "Szczaw królewski", "category": "Rośliny", "model": "itpl_perm_herb.glb", "total": 11,
     "places": [ { "kind": "ground", "lon": 0.0019, "lat": 0.0036, "h": 79.5,
                   "label": "na ziemi", "ref": "item-123", "amount": 1 } ] },
   { "id": "character:VLK_412_HARAD", "type": "character", "code": "VLK_412_HARAD",
@@ -71,12 +71,38 @@ Postać jest „unikatowa”:
 - **potwory** — imię jest jedyne w całej grze i potwór jest wstawiony raz w całej grze (Pan cienia Inubis, Czarny troll — tak;
   wilki, dziki, chrząszcze — nie).
 
+## Model 3D przedmiotu (`model`, od wersji paczki 2)
+
+Każdy wpis `type: "item"` w `search_index.json`, każdy obiekt w `items.geojson` i każda skrzynia
+w `containers.geojson` ma pole `model`:
+
+- **nazwa pliku** z folderu `models/` (np. `"itpl_perm_herb.glb"`) — sama nazwa, bez ścieżki i adresu;
+- **`null`** — przedmiot nie ma wyeksportowanego modelu. Modele powstają tylko dla obiektów, które
+  stoją w świecie, więc przedmioty występujące wyłącznie w skrzyniach lub ekwipunku NPC mają `null`.
+  Skrzynie mają dziś zawsze `null` (ich modele `.MDS` nie są jeszcze eksportowane).
+
+Pełny adres buduje aplikacja, np. przy hostingu modeli pod
+`https://gisofgothicmodels.dworecki.dev/g2nk/khorinis/models/`:
+
+```js
+const url = item.model ? `${MODELS_BASE_URL}${item.model}` : null;
+```
+
+Pliki `.glb` odwołują się do tekstur względnie (`textures/*.png`), więc folder `models/textures/`
+musi leżeć obok plików `.glb` pod tym samym adresem bazowym.
+
+Uwaga: pliki w `models/` to modele z **instancjami** (`EXT_mesh_gpu_instancing`): jeden plik zawiera
+wszystkie wystąpienia obiektu w świecie, w pozycjach świata (setki metrów od siebie). To dobre do mapy,
+ale nie do podglądu jednego przedmiotu w karcie: wczytany samodzielnie pokaże wszystkie kopie naraz.
+Do karty trzeba zignorować instancje (np. w three.js `GLTFLoader` daje `InstancedMesh` — ustaw `count = 1`
+i macierz jednostkową) albo użyć osobnych modeli podglądu, gdy zostaną dodane do paczki.
+
 ## Warstwy GeoJSON
 
 | Plik | Obiekt | Najważniejsze pola |
 |---|---|---|
-| `items.geojson` | przedmiot w świecie | `code`, `name`, `category`, `amount`, `source` (`zen`/`script`), `spot` |
-| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni |
+| `items.geojson` | przedmiot w świecie | `code`, `name`, `category`, `amount`, `source` (`zen`/`script`), `spot`, `model` |
+| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni, `model` = plik w `models/` albo `null` |
 | `characters.geojson` | unikatowa postać (miejsce pojawienia się) | `code`, `codes`, `name`, `guild_name`, `level`, `chapter`, `inventory`, `game_pos`, `height_m` |
 | `npcs.geojson` | każde wstawienie NPC (także zwykłych i potworów) | `code`, `name`, `guild_name`, `level`, `chapter`, `insert_waypoint` |
 | `character_places.geojson` | miejsce z rutyny postaci | `npc_code`, `npc_name`, `routine`, `is_default`, `waypoint`, `times`, `actions` |

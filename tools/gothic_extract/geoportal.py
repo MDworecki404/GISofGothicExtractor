@@ -129,6 +129,31 @@ def _routine_groups(routine_feats: list[dict], codes: set[str]) -> list[dict]:
     return list(groups.values())
 
 
+def load_model_index(index: dict) -> dict[str, str | None]:
+    """models/index.json -> {visual (upper-case) -> glb file name}; visuals listed in `missing` map to None."""
+    out: dict[str, str | None] = {m.upper(): None for m in index.get("missing", [])}
+    for m in index.get("models", []):
+        out[m["visual"].upper()] = m["file"]
+    return out
+
+
+def resolve_model(code: str, catalog: dict, models: dict[str, str | None]) -> tuple[str | None, str | None]:
+    """Item code -> (glb file name in models/, None) or (None, reason).
+
+    Path: code -> catalog visual -> models/index.json entry with that visual (any kind, case-insensitive).
+    Reasons: "no_visual" (no visual in the catalog), "missing" (listed as missing in index.json),
+    "no_index_entry" (the visual was never exported, e.g. the item is only in chests/inventories).
+    """
+    visual = (catalog.get(code, {}).get("visual") or "").upper()
+    if not visual:
+        return None, "no_visual"
+    if visual not in models:
+        return None, "no_index_entry"
+    if models[visual] is None:
+        return None, "missing"
+    return models[visual], None
+
+
 def build_geoportal(src: Path, dst: Path) -> dict:
     dst.mkdir(parents=True, exist_ok=True)
     catalog = _read(src / "catalog_items.json")
@@ -136,6 +161,8 @@ def build_geoportal(src: Path, dst: Path) -> dict:
     containers = _read(src / "containers.geojson")["features"]
     npcs = _read(src / "npcs.geojson")["features"]
     routines = _read(src / "npc_routines.geojson")["features"]
+    models_index_path = src / "models" / "index.json"
+    models = load_model_index(_read(models_index_path)) if models_index_path.exists() else {}
 
     item_places: dict[str, list[dict]] = defaultdict(list)
     for f in items:
@@ -157,7 +184,7 @@ def build_geoportal(src: Path, dst: Path) -> dict:
     for code, places in sorted(item_places.items()):
         d = catalog.get(code, {})
         entries.append({"id": f"item:{code}", "type": "item", "code": code, "name": d.get("name") or code,
-                        "category": d.get("category"), "total": sum(pl.get("amount", 1) for pl in places if pl.get("certainty", "always") == "always"),
+                        "category": d.get("category"), "model": resolve_model(code, catalog, models)[0], "total": sum(pl.get("amount", 1) for pl in places if pl.get("certainty", "always") == "always"),
                         "places": places})
 
     characters = unique_characters(npcs)
@@ -200,8 +227,12 @@ def build_geoportal(src: Path, dst: Path) -> dict:
         for f in npcs]
 
     _write(dst / "search_index.json", {"version": 1, "entries": entries})
+    # glb for a chest's own visual, if one was exported (chests are .MDS today, so usually null)
+    for f in containers:
+        f["properties"]["model"] = models.get((f["properties"].get("visual") or "").upper())
     _write(dst / "items.geojson", _fc([{"type": "Feature", "geometry": f["geometry"], "properties": {
-        k: f["properties"][k] for k in ("id", "code", "name", "category", "amount", "source", "spot")}} for f in items]))
+        **{k: f["properties"][k] for k in ("id", "code", "name", "category", "amount", "source", "spot")},
+        "model": resolve_model(f["properties"]["code"], catalog, models)[0]}} for f in items]))
     _write(dst / "containers.geojson", _fc(containers))
     _write(dst / "characters.geojson", _fc(char_feats))
     _write(dst / "npcs.geojson", _fc(npc_layer))
@@ -219,8 +250,9 @@ def build_geoportal(src: Path, dst: Path) -> dict:
     meta = _read(src / "metadata.json")
     meta.pop("mesh", None)
     meta["package"] = {
-        "version": 1,
+        "version": 2,  # 2: `model` on items (search index, items.geojson) and containers
         "counts": {"search_items": sum(e["type"] == "item" for e in entries),
+                   "search_items_with_model": sum(e["type"] == "item" and e["model"] is not None for e in entries),
                    "search_characters": len(char_feats), "items": len(items), "containers": len(containers),
                    "npcs": len(npc_layer), "character_places": len(place_feats)},
         "files": sorted(["search_index.json", "items.geojson", "containers.geojson", "characters.geojson",
