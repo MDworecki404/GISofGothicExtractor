@@ -69,16 +69,36 @@ def game_instance(pos: Vec3, rot: list[float]) -> tuple[tuple[float, float, floa
     return tuple(float(v) for v in t), _quat_from_matrix(m)
 
 
-def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: list[tuple[Vec3, list[float]]],
-               out_path: Path, tex_cache: dict | None = None, texture_dir: str | None = None) -> int:
-    """Write one instanced .glb for an MRM; returns the triangle count of one copy.
-
-    With texture_dir (relative to out_path's folder), textures are written there once as PNG and
-    referenced by URI, so many models share one file; otherwise they are embedded.
-    """
-    tex_cache = {} if tex_cache is None else tex_cache
+def _gltf_positions(mrm: zenkit.MultiResolutionMesh) -> np.ndarray:
+    """MRM vertex positions in the glTF frame: (x/100, y/100, -z/100)."""
     positions = np.array([(p.x, p.y, p.z) for p in mrm.positions], dtype=np.float64) / 100.0
     positions[:, 2] *= -1
+    return positions
+
+
+def _used_bounds(mrm: zenkit.MultiResolutionMesh, positions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Bounding box of the vertices actually referenced by triangles (MRMs can carry unused LOD vertices)."""
+    used = [w.index for sm in mrm.submeshes if len(sm.triangles) for w in sm.wedges]
+    pts = positions[np.array(sorted(set(used)), dtype=np.int64)] if used else positions
+    return pts.min(axis=0), pts.max(axis=0)
+
+
+def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: list[tuple[Vec3, list[float]]] | None,
+               out_path: Path, tex_cache: dict | None = None, texture_dir: str | None = None,
+               recenter: bool = False) -> int:
+    """Write one .glb for an MRM; returns the triangle count of one copy.
+
+    placements: every placement becomes an EXT_mesh_gpu_instancing instance (world models). With None the
+    file holds one plain copy and no instancing extension (previews).
+    recenter: move the mesh so it is centred on the origin horizontally and its lowest vertex sits at y = 0.
+    texture_dir (relative to out_path's folder, e.g. "textures" or "../textures"): textures are written there
+    once as PNG and referenced by URI, never overwritten; otherwise they are embedded.
+    """
+    tex_cache = {} if tex_cache is None else tex_cache
+    positions = _gltf_positions(mrm)
+    if recenter:
+        lo, hi = _used_bounds(mrm, positions)
+        positions -= np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
 
     blob = Blob()
     accessors: list[gl.Accessor] = []
@@ -147,18 +167,20 @@ def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: lis
         materials.append(gm)
         primitives.append(gl.Primitive(attributes=attrs, indices=idx, material=len(materials) - 1))
 
-    inst = [game_instance(p, r) for p, r in placements]
-    t_acc = accessor(np.array([t for t, _ in inst], dtype=np.float32), gl.VEC3, gl.FLOAT, minmax=True)
-    r_acc = accessor(np.array([q for _, q in inst], dtype=np.float32), gl.VEC4, gl.FLOAT)
+    node = gl.Node(mesh=0, name=out_path.stem)
+    if placements is not None:
+        inst = [game_instance(p, r) for p, r in placements]
+        t_acc = accessor(np.array([t for t, _ in inst], dtype=np.float32), gl.VEC3, gl.FLOAT, minmax=True)
+        r_acc = accessor(np.array([q for _, q in inst], dtype=np.float32), gl.VEC4, gl.FLOAT)
+        node.extensions = {INSTANCING: {"attributes": {"TRANSLATION": t_acc, "ROTATION": r_acc}}}
 
     data = blob.bytes()
     gltf = gl.GLTF2(
         asset=gl.Asset(generator="gothic_extract", version="2.0"),
-        extensionsUsed=[INSTANCING],
+        extensionsUsed=[INSTANCING] if placements is not None else [],
         scene=0,
         scenes=[gl.Scene(nodes=[0])],
-        nodes=[gl.Node(mesh=0, name=out_path.stem,
-                       extensions={INSTANCING: {"attributes": {"TRANSLATION": t_acc, "ROTATION": r_acc}}})],
+        nodes=[node],
         meshes=[gl.Mesh(primitives=primitives, name=out_path.stem)],
         accessors=accessors,
         bufferViews=blob.views,
@@ -235,4 +257,67 @@ def export_vob_models(vfs: zenkit.Vfs, wd: WorldData, catalog: dict[str, ItemDef
         {"frame": "same as world.glb: (x/100, y/100, -z/100) of game coordinates", "extension": INSTANCING,
          "models": entries, "missing": report.missing,
          "unhandled": unhandled}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return report
+
+
+@dataclass
+class PreviewReport:
+    entries: list[dict] = field(default_factory=list)  # one per preview file (see previews/index.json)
+    file_for: dict[str, str | None] = field(default_factory=dict)  # item code -> preview file name or None
+    reason: dict[str, str | None] = field(default_factory=dict)  # item code -> why there is no preview
+    new_textures: list[str] = field(default_factory=list)  # PNGs this run added to the shared textures folder
+
+
+def export_item_previews(vfs: zenkit.Vfs, catalog: dict[str, ItemDef], out_dir: Path) -> PreviewReport:
+    """One standalone .glb per item visual: a single copy, no instancing, centred, standing on y = 0, in metres.
+
+    Items sharing a visual share a file. Only static meshes (.3DS -> compiled .MRM) are exported; textures go
+    to the sibling `textures/` folder shared with the world models (existing files are never touched).
+    Reasons for no preview: "no_visual", "unsupported_visual" (e.g. .MMS bows), "no_mesh" (MRM not in the VFS).
+    """
+    report = PreviewReport()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob("*.glb"):
+        stale.unlink()
+    textures_dir = out_dir.parent / "textures"
+    before = {f.name for f in textures_dir.glob("*.png")} if textures_dir.is_dir() else set()
+    tex_cache: dict = {}
+    done: dict[str, str | None] = {}
+    fail: dict[str, str] = {}
+    codes_by_file: dict[str, list[str]] = defaultdict(list)
+    for code, d in sorted(catalog.items()):
+        vis = (d.visual or "").upper()
+        if not vis:
+            report.file_for[code], report.reason[code] = None, "no_visual"
+            continue
+        if not vis.endswith(".3DS"):
+            report.file_for[code], report.reason[code] = None, "unsupported_visual"
+            continue
+        if vis not in done and vis not in fail:
+            node = vfs.find(vis[: -len(".3DS")] + ".MRM")
+            if node is None:
+                fail[vis] = "no_mesh"
+            else:
+                mrm = zenkit.MultiResolutionMesh.load(node.open())
+                fname = vis[: -len(".3DS")].lower() + ".glb"
+                tris = mrm_to_glb(mrm, vfs, None, out_dir / fname, tex_cache, texture_dir="../textures",
+                                  recenter=True)
+                lo, hi = _used_bounds(mrm, _gltf_positions(mrm))
+                size = hi - lo
+                report.entries.append({"file": fname, "visual": vis, "triangles": tris,
+                                       "bounds_m": {"x": round(float(size[0]), 4), "y": round(float(size[1]), 4),
+                                                    "z": round(float(size[2]), 4)}})
+                done[vis] = fname
+        if vis in fail:
+            report.file_for[code], report.reason[code] = None, fail[vis]
+        else:
+            report.file_for[code], report.reason[code] = done[vis], None
+            codes_by_file[done[vis]].append(code)
+    for e in report.entries:
+        e["codes"] = codes_by_file[e["file"]]
+    after = {f.name for f in textures_dir.glob("*.png")} if textures_dir.is_dir() else set()
+    report.new_textures = sorted(after - before)
+    (out_dir / "index.json").write_text(json.dumps(
+        {"frame": "glTF (east, up, -north) in metres; centred horizontally, lowest vertex at y = 0",
+         "textures": "../textures/", "previews": report.entries}, ensure_ascii=False, indent=1), encoding="utf-8")
     return report

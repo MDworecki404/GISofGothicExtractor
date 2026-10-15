@@ -36,7 +36,7 @@ const model = await Cesium.Model.fromGltfAsync({
 ```json
 { "version": 1, "entries": [
   { "id": "item:ITPL_PERM_HERB", "type": "item", "code": "ITPL_PERM_HERB",
-    "name": "Szczaw królewski", "category": "Rośliny", "model": "itpl_perm_herb.glb", "total": 11,
+    "name": "Szczaw królewski", "category": "Rośliny", "model": "previews/itpl_perm_herb.glb", "total": 11,
     "places": [ { "kind": "ground", "lon": 0.0019, "lat": 0.0036, "h": 79.5,
                   "label": "na ziemi", "ref": "item-123", "amount": 1 } ] },
   { "id": "character:VLK_412_HARAD", "type": "character", "code": "VLK_412_HARAD",
@@ -71,38 +71,47 @@ Postać jest „unikatowa”:
 - **potwory** — imię jest jedyne w całej grze i potwór jest wstawiony raz w całej grze (Pan cienia Inubis, Czarny troll — tak;
   wilki, dziki, chrząszcze — nie).
 
-## Model 3D przedmiotu (`model`, od wersji paczki 2)
+## Model 3D przedmiotu (`model`)
 
 Każdy wpis `type: "item"` w `search_index.json`, każdy obiekt w `items.geojson` i każda skrzynia
 w `containers.geojson` ma pole `model`:
 
-- **nazwa pliku** z folderu `models/` (np. `"itpl_perm_herb.glb"`) — sama nazwa, bez ścieżki i adresu;
-- **`null`** — przedmiot nie ma wyeksportowanego modelu. Modele powstają tylko dla obiektów, które
-  stoją w świecie, więc przedmioty występujące wyłącznie w skrzyniach lub ekwipunku NPC mają `null`.
+- **ścieżka do modelu podglądu względem `models/`**, np. `"previews/itfo_apple.glb"`;
+- **`null`** — brak podglądu: przedmiot nie ma modelu w katalogu (`visual`), albo jego model nie jest
+  statyczną siatką (np. łuki i kusze `.mms` — animowane, jeszcze nieeksportowane).
   Skrzynie mają dziś zawsze `null` (ich modele `.MDS` nie są jeszcze eksportowane).
 
 Pełny adres buduje aplikacja, np. przy hostingu modeli pod
 `https://gisofgothicmodels.dworecki.dev/g2nk/khorinis/models/`:
 
 ```js
-const url = item.model ? `${MODELS_BASE_URL}${item.model}` : null;
+const MODELS_BASE_URL = "https://gisofgothicmodels.dworecki.dev/g2nk/khorinis/models/";
+const url = item.model ? MODELS_BASE_URL + item.model : null; // …/models/previews/itfo_apple.glb
 ```
 
-Pliki `.glb` odwołują się do tekstur względnie (`textures/*.png`), więc folder `models/textures/`
-musi leżeć obok plików `.glb` pod tym samym adresem bazowym.
+### Modele podglądu (`models/previews/`)
 
-Uwaga: pliki w `models/` to modele z **instancjami** (`EXT_mesh_gpu_instancing`): jeden plik zawiera
-wszystkie wystąpienia obiektu w świecie, w pozycjach świata (setki metrów od siebie). To dobre do mapy,
-ale nie do podglądu jednego przedmiotu w karcie: wczytany samodzielnie pokaże wszystkie kopie naraz.
-Do karty trzeba zignorować instancje (np. w three.js `GLTFLoader` daje `InstancedMesh` — ustaw `count = 1`
-i macierz jednostkową) albo użyć osobnych modeli podglądu, gdy zostaną dodane do paczki.
+- Jeden plik glTF Binary na model przedmiotu (`visual`). Przedmioty o tym samym modelu (np. kilka kluczy)
+  wskazują ten sam plik.
+- **Jedna kopia** przedmiotu, bez instancji (`EXT_mesh_gpu_instancing`) i bez pozycji świata —
+  gotowe do pokazania w karcie przedmiotu.
+- Układ jak pozostałe `.glb` (glTF Y-up: Wschód, Góra, −Północ), **w metrach** (realny rozmiar);
+  przedmiot jest **wyśrodkowany w poziomie** na początku układu, a jego **najniższy punkt ma y = 0**
+  (stoi na „podłodze”).
+- Tekstury: odwołania względne `../textures/*.png`, czyli do wspólnego `models/textures/`.
+  Na hostingu `previews/` musi leżeć obok `textures/` pod tym samym adresem bazowym.
+- `models/previews/index.json`: dla każdego pliku `file`, `visual`, `triangles`,
+  `bounds_m` (`{x, y, z}` — rozmiar pudełka w metrach) i `codes` (kody przedmiotów z tym modelem).
+
+Pliki `models/*.glb` (bez `previews/`) to nadal modele **świata** z instancjami: jeden plik zawiera wszystkie
+wystąpienia obiektu w pozycjach świata. Używaj ich do mapy, nie do karty przedmiotu.
 
 ## Warstwy GeoJSON
 
 | Plik | Obiekt | Najważniejsze pola |
 |---|---|---|
 | `items.geojson` | przedmiot w świecie | `code`, `name`, `category`, `amount`, `source` (`zen`/`script`), `spot`, `model` |
-| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni, `model` = plik w `models/` albo `null` |
+| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni, `model` = ścieżka podglądu względem `models/` albo `null` |
 | `characters.geojson` | unikatowa postać (miejsce pojawienia się) | `code`, `codes`, `name`, `guild_name`, `level`, `chapter`, `inventory`, `game_pos`, `height_m` |
 | `npcs.geojson` | każde wstawienie NPC (także zwykłych i potworów) | `code`, `name`, `guild_name`, `level`, `chapter`, `insert_waypoint` |
 | `character_places.geojson` | miejsce z rutyny postaci | `npc_code`, `npc_name`, `routine`, `is_default`, `waypoint`, `times`, `actions` |

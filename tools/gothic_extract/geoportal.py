@@ -129,29 +129,29 @@ def _routine_groups(routine_feats: list[dict], codes: set[str]) -> list[dict]:
     return list(groups.values())
 
 
-def load_model_index(index: dict) -> dict[str, str | None]:
-    """models/index.json -> {visual (upper-case) -> glb file name}; visuals listed in `missing` map to None."""
-    out: dict[str, str | None] = {m.upper(): None for m in index.get("missing", [])}
-    for m in index.get("models", []):
-        out[m["visual"].upper()] = m["file"]
-    return out
+PREVIEWS_DIR = "previews"
 
 
-def resolve_model(code: str, catalog: dict, models: dict[str, str | None]) -> tuple[str | None, str | None]:
-    """Item code -> (glb file name in models/, None) or (None, reason).
+def load_preview_index(index: dict) -> dict[str, str]:
+    """models/previews/index.json -> {visual (upper-case) -> model path relative to models/}."""
+    return {e["visual"].upper(): f"{PREVIEWS_DIR}/{e['file']}" for e in index.get("previews", [])}
 
-    Path: code -> catalog visual -> models/index.json entry with that visual (any kind, case-insensitive).
-    Reasons: "no_visual" (no visual in the catalog), "missing" (listed as missing in index.json),
-    "no_index_entry" (the visual was never exported, e.g. the item is only in chests/inventories).
+
+def resolve_model(code: str, catalog: dict, previews: dict[str, str]) -> tuple[str | None, str | None]:
+    """Item code -> (preview path relative to models/, e.g. "previews/itfo_apple.glb", None) or (None, reason).
+
+    Path: code -> catalog visual -> models/previews/index.json entry with that visual (case-insensitive).
+    Reasons: "no_visual" (no visual in the catalog), "unsupported_visual" (not a static .3DS mesh, e.g. .MMS
+    bows), "no_preview" (static mesh, but no preview file was exported for it).
     """
     visual = (catalog.get(code, {}).get("visual") or "").upper()
     if not visual:
         return None, "no_visual"
-    if visual not in models:
-        return None, "no_index_entry"
-    if models[visual] is None:
-        return None, "missing"
-    return models[visual], None
+    if not visual.endswith(".3DS"):
+        return None, "unsupported_visual"
+    if visual not in previews:
+        return None, "no_preview"
+    return previews[visual], None
 
 
 def build_geoportal(src: Path, dst: Path) -> dict:
@@ -161,8 +161,8 @@ def build_geoportal(src: Path, dst: Path) -> dict:
     containers = _read(src / "containers.geojson")["features"]
     npcs = _read(src / "npcs.geojson")["features"]
     routines = _read(src / "npc_routines.geojson")["features"]
-    models_index_path = src / "models" / "index.json"
-    models = load_model_index(_read(models_index_path)) if models_index_path.exists() else {}
+    previews_index_path = src / "models" / PREVIEWS_DIR / "index.json"
+    models = load_preview_index(_read(previews_index_path)) if previews_index_path.exists() else {}
 
     item_places: dict[str, list[dict]] = defaultdict(list)
     for f in items:
@@ -227,7 +227,7 @@ def build_geoportal(src: Path, dst: Path) -> dict:
         for f in npcs]
 
     _write(dst / "search_index.json", {"version": 1, "entries": entries})
-    # glb for a chest's own visual, if one was exported (chests are .MDS today, so usually null)
+    # preview of a chest's own visual, if one exists (chests are .MDS, not exported yet, so null today)
     for f in containers:
         f["properties"]["model"] = models.get((f["properties"].get("visual") or "").upper())
     _write(dst / "items.geojson", _fc([{"type": "Feature", "geometry": f["geometry"], "properties": {
@@ -250,7 +250,7 @@ def build_geoportal(src: Path, dst: Path) -> dict:
     meta = _read(src / "metadata.json")
     meta.pop("mesh", None)
     meta["package"] = {
-        "version": 2,  # 2: `model` on items (search index, items.geojson) and containers
+        "version": 3,  # 2: `model` on items and containers; 3: `model` points to models/previews/
         "counts": {"search_items": sum(e["type"] == "item" for e in entries),
                    "search_items_with_model": sum(e["type"] == "item" and e["model"] is not None for e in entries),
                    "search_characters": len(char_feats), "items": len(items), "containers": len(containers),

@@ -10,7 +10,7 @@ from .daedalus_scan import other_world_functions
 from .npcs import extract_npcs, extract_script_items
 from .script_vm import make_vm
 from .vfs import open_vfs
-from .vob_models import export_vob_models
+from .vob_models import export_item_previews, export_vob_models
 from .world_data import PointResolver, load_world
 
 
@@ -21,6 +21,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--skip-mesh", action="store_true", help="do not export world.glb")
     ap.add_argument("--skip-models", action="store_true", help="do not export VOB/item models (models/*.glb)")
+    ap.add_argument("--skip-previews", action="store_true",
+                    help="do not export single-copy item previews (models/previews/*.glb)")
     args = ap.parse_args(argv)
 
     cfg = load_game(args.game)
@@ -45,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
         mr = export_vob_models(vfs, wd, catalog, script_items, args.out / "models")
         print(f"  models: {mr.models}, instances: {mr.instances}, missing: {len(mr.missing)}, "
               f"not yet supported: {mr.unhandled}", flush=True)
+    if not args.skip_previews:
+        # after the world models: their export clears models/textures, previews only add to it
+        print("[4/5] item previews -> models/previews/*.glb", flush=True)
+        pr = export_item_previews(vfs, catalog, args.out / "models" / "previews")
+        print(f"  previews: {len(pr.entries)}, new textures: {len(pr.new_textures)}", flush=True)
     print("[5/5] writing GeoJSON", flush=True)
     report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, script_items, mesh)
     for k, v in report.counts.items():
