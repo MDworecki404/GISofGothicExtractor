@@ -132,8 +132,12 @@ def game_name_counts(vm: zenkit.DaedalusVm) -> Counter:
     return out
 
 
-def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[str] = frozenset()) -> list[NpcRec]:
-    """exclude: names of functions whose inserts belong to other worlds."""
+def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[str] = frozenset(),
+                 first_chapter: int | None = None) -> list[NpcRec]:
+    """exclude: names of functions whose inserts belong to other worlds.
+
+    first_chapter: chapter given to inserts outside any chapter function (None = leave empty).
+    """
     name_counts = game_name_counts(vm)
     all_inserts = find_calls(vm, {"WLD_INSERTNPC"})
     inserts_in_game = Counter((symbol_name(vm, c.args[0]) or "").upper() for c in all_inserts)
@@ -164,7 +168,7 @@ def extract_npcs(vm: zenkit.DaedalusVm, resolver: PointResolver, exclude: set[st
             )
         name, guild, level, inv, routines = cache[code]
         out.append(NpcRec(code, name, guild, guilds.get(guild, str(guild)), level, wp.upper(), c.caller,
-                          _chapter(c.caller), resolver.resolve(wp), inv, routines, name_counts[name] == 1,
+                          _chapter(c.caller) or first_chapter, resolver.resolve(wp), inv, routines, name_counts[name] == 1,
                           guild < human_below, inserts_in_game[code]))
     return out
 

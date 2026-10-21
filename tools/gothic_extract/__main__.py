@@ -6,7 +6,9 @@ from .catalog import build_item_catalog
 from .config import load_game
 from .export_geojson import write_outputs
 from .mesh_export import export_world_glb
-from .daedalus_scan import other_world_functions
+from fnmatch import fnmatch
+
+from .daedalus_scan import functions, other_world_functions
 from .npcs import extract_npcs, extract_script_items
 from .script_vm import make_vm
 from .vfs import open_vfs
@@ -36,7 +38,10 @@ def main(argv: list[str] | None = None) -> int:
     vm = make_vm(cfg.script_dat)
     catalog = build_item_catalog(vm)
     exclude = other_world_functions(vm, cfg.world_roots, args.world)
-    npcs = extract_npcs(vm, resolver, exclude)
+    pats = cfg.exclude_functions.get(args.world.upper(), [])
+    if pats:
+        exclude |= {s.name.upper() for s in functions(vm) if any(fnmatch(s.name.upper(), p.upper()) for p in pats)}
+    npcs = extract_npcs(vm, resolver, exclude, cfg.first_chapters.get(args.world.upper()))
     script_items = extract_script_items(vm, resolver, exclude)
     mesh = None
     if not args.skip_mesh:

@@ -242,6 +242,9 @@ def build_geoportal(src: Path, dst: Path) -> dict:
     if (src / "world.glb").exists():
         shutil.copy2(src / "world.glb", dst / "world.glb")
         copied.append("world.glb")
+    if (src / "vobs.glb").exists():
+        shutil.copy2(src / "vobs.glb", dst / "vobs.glb")
+        copied.append("vobs.glb")
     if (src / "models").is_dir():
         shutil.rmtree(dst / "models", ignore_errors=True)
         shutil.copytree(src / "models", dst / "models")

@@ -83,6 +83,131 @@ def _used_bounds(mrm: zenkit.MultiResolutionMesh, positions: np.ndarray) -> tupl
     return pts.min(axis=0), pts.max(axis=0)
 
 
+class _GlbBuilder:
+    """Accumulates meshes and nodes of one .glb; textures are stored once however many models use them."""
+
+    def __init__(self, out_path: Path, vfs: zenkit.Vfs, tex_cache: dict, texture_dir: str | None,
+                 bake: bool = False):
+        self.bake = bake  # one plain node per placement instead of EXT_mesh_gpu_instancing (Cesium ion drops it)
+        self.out_path, self.vfs, self.tex_cache, self.texture_dir = out_path, vfs, tex_cache, texture_dir
+        self.blob = Blob()
+        self.accessors: list[gl.Accessor] = []
+        self.materials: list[gl.Material] = []
+        self.images: list[gl.Image] = []
+        self.textures: list[gl.Texture] = []
+        self.meshes: list[gl.Mesh] = []
+        self.nodes: list[gl.Node] = []
+        self.image_idx: dict[str, tuple[int, bool] | None] = {}
+
+    def accessor(self, arr, kind, comp, target=None, minmax=False):
+        view = self.blob.add(np.ascontiguousarray(arr).tobytes(), target)
+        acc = gl.Accessor(bufferView=view, componentType=comp, count=len(arr), type=kind)
+        if minmax:
+            acc.min, acc.max = arr.min(axis=0).tolist(), arr.max(axis=0).tolist()
+        self.accessors.append(acc)
+        return len(self.accessors) - 1
+
+    def _texture(self, tex_name: str):
+        if tex_name not in self.image_idx:
+            if tex_name not in self.tex_cache:
+                self.tex_cache[tex_name] = load_png(self.vfs, tex_name)
+            loaded = self.tex_cache[tex_name]
+            if loaded is None:
+                self.image_idx[tex_name] = None
+            else:
+                png, has_alpha = loaded
+                if self.texture_dir is None:
+                    self.images.append(gl.Image(bufferView=self.blob.add(png), mimeType="image/png", name=tex_name))
+                else:
+                    uri = f"{self.texture_dir}/{tex_name.rsplit('.', 1)[0].lower()}.png"
+                    target = self.out_path.parent / uri
+                    if not target.exists():
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(png)
+                    self.images.append(gl.Image(uri=uri, mimeType="image/png", name=tex_name))
+                self.textures.append(gl.Texture(source=len(self.images) - 1, sampler=0))
+                self.image_idx[tex_name] = (len(self.textures) - 1, has_alpha)
+        return self.image_idx[tex_name]
+
+    def add_model(self, mrm: zenkit.MultiResolutionMesh, placements: list[tuple[Vec3, list[float]]] | None,
+                  name: str, recenter: bool = False) -> int:
+        """Add one mesh + node; returns the triangle count of one copy."""
+        positions = _gltf_positions(mrm)
+        if recenter:
+            lo, hi = _used_bounds(mrm, positions)
+            positions -= np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
+        primitives, triangles = [], 0
+        for sm in mrm.submeshes:
+            wedges = sm.wedges
+            tris = np.array([tuple(t.wedges) for t in sm.triangles], dtype=np.uint32)
+            if len(tris) == 0 or len(wedges) == 0:
+                continue
+            triangles += len(tris)
+            widx = np.array([w.index for w in wedges], dtype=np.int64)
+            uv = np.array([(w.texture.x, w.texture.y) for w in wedges], dtype=np.float32)
+            nrm = np.array([(w.normal.x, w.normal.y, -w.normal.z) for w in wedges], dtype=np.float32)
+            pos = positions[widx].astype(np.float32)
+            attrs = gl.Attributes(
+                POSITION=self.accessor(pos, gl.VEC3, gl.FLOAT, gl.ARRAY_BUFFER, minmax=True),
+                NORMAL=self.accessor(nrm, gl.VEC3, gl.FLOAT, gl.ARRAY_BUFFER),
+                TEXCOORD_0=self.accessor(uv, gl.VEC2, gl.FLOAT, gl.ARRAY_BUFFER),
+            )
+            idx = self.accessor(tris.reshape(-1), gl.SCALAR, gl.UNSIGNED_INT, gl.ELEMENT_ARRAY_BUFFER)
+
+            mat = sm.material
+            tex = self._texture((mat.texture or "").upper())
+            pbr = gl.PbrMetallicRoughness(metallicFactor=0.0, roughnessFactor=1.0)
+            gm = gl.Material(name=mat.name, pbrMetallicRoughness=pbr)
+            if tex is None:
+                c = mat.color
+                pbr.baseColorFactor = [c.r / 255, c.g / 255, c.b / 255, 1.0]
+            else:
+                pbr.baseColorTexture = gl.TextureInfo(index=tex[0])
+                if mat.alpha_function == zenkit.AlphaFunction.BLEND:
+                    gm.alphaMode, gm.doubleSided = gl.BLEND, True
+                elif tex[1] or mrm.alpha_test:
+                    gm.alphaMode, gm.alphaCutoff, gm.doubleSided = gl.MASK, 0.5, True
+            self.materials.append(gm)
+            primitives.append(gl.Primitive(attributes=attrs, indices=idx, material=len(self.materials) - 1))
+
+        self.meshes.append(gl.Mesh(primitives=primitives, name=name))
+        node = gl.Node(mesh=len(self.meshes) - 1, name=name)
+        if placements is not None and self.bake:
+            for p, r in placements:
+                t, q = game_instance(p, r)
+                self.nodes.append(gl.Node(mesh=node.mesh, name=name, translation=list(t), rotation=list(q)))
+            return triangles
+        if placements is not None:
+            inst = [game_instance(p, r) for p, r in placements]
+            t_acc = self.accessor(np.array([t for t, _ in inst], dtype=np.float32), gl.VEC3, gl.FLOAT, minmax=True)
+            r_acc = self.accessor(np.array([q for _, q in inst], dtype=np.float32), gl.VEC4, gl.FLOAT)
+            node.extensions = {INSTANCING: {"attributes": {"TRANSLATION": t_acc, "ROTATION": r_acc}}}
+        self.nodes.append(node)
+        return triangles
+
+    def save(self, instanced: bool) -> None:
+        data = self.blob.bytes()
+        gltf = gl.GLTF2(
+            asset=gl.Asset(generator="gothic_extract", version="2.0"),
+            extensionsUsed=[INSTANCING] if instanced else [],
+            scene=0,
+            scenes=[gl.Scene(nodes=list(range(len(self.nodes))))],
+            nodes=self.nodes,
+            meshes=self.meshes,
+            accessors=self.accessors,
+            bufferViews=self.blob.views,
+            buffers=[gl.Buffer(byteLength=len(data))],
+            materials=self.materials,
+            images=self.images,
+            textures=self.textures,
+            samplers=[gl.Sampler(magFilter=gl.LINEAR, minFilter=gl.LINEAR_MIPMAP_LINEAR, wrapS=gl.REPEAT,
+                                 wrapT=gl.REPEAT)],
+        )
+        gltf.set_binary_blob(data)
+        self.out_path.parent.mkdir(parents=True, exist_ok=True)
+        gltf.save_binary(str(self.out_path))
+
+
 def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: list[tuple[Vec3, list[float]]] | None,
                out_path: Path, tex_cache: dict | None = None, texture_dir: str | None = None,
                recenter: bool = False) -> int:
@@ -94,105 +219,9 @@ def mrm_to_glb(mrm: zenkit.MultiResolutionMesh, vfs: zenkit.Vfs, placements: lis
     texture_dir (relative to out_path's folder, e.g. "textures" or "../textures"): textures are written there
     once as PNG and referenced by URI, never overwritten; otherwise they are embedded.
     """
-    tex_cache = {} if tex_cache is None else tex_cache
-    positions = _gltf_positions(mrm)
-    if recenter:
-        lo, hi = _used_bounds(mrm, positions)
-        positions -= np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
-
-    blob = Blob()
-    accessors: list[gl.Accessor] = []
-    materials, images, textures, primitives = [], [], [], []
-    image_idx: dict[str, tuple[int, bool] | None] = {}
-    triangles = 0
-
-    def accessor(arr, kind, comp, target=None, minmax=False):
-        view = blob.add(np.ascontiguousarray(arr).tobytes(), target)
-        acc = gl.Accessor(bufferView=view, componentType=comp, count=len(arr), type=kind)
-        if minmax:
-            acc.min, acc.max = arr.min(axis=0).tolist(), arr.max(axis=0).tolist()
-        accessors.append(acc)
-        return len(accessors) - 1
-
-    for sm in mrm.submeshes:
-        wedges = sm.wedges
-        tris = np.array([tuple(t.wedges) for t in sm.triangles], dtype=np.uint32)
-        if len(tris) == 0 or len(wedges) == 0:
-            continue
-        triangles += len(tris)
-        widx = np.array([w.index for w in wedges], dtype=np.int64)
-        uv = np.array([(w.texture.x, w.texture.y) for w in wedges], dtype=np.float32)
-        nrm = np.array([(w.normal.x, w.normal.y, -w.normal.z) for w in wedges], dtype=np.float32)
-        pos = positions[widx].astype(np.float32)
-        attrs = gl.Attributes(
-            POSITION=accessor(pos, gl.VEC3, gl.FLOAT, gl.ARRAY_BUFFER, minmax=True),
-            NORMAL=accessor(nrm, gl.VEC3, gl.FLOAT, gl.ARRAY_BUFFER),
-            TEXCOORD_0=accessor(uv, gl.VEC2, gl.FLOAT, gl.ARRAY_BUFFER),
-        )
-        idx = accessor(tris.reshape(-1), gl.SCALAR, gl.UNSIGNED_INT, gl.ELEMENT_ARRAY_BUFFER)
-
-        mat = sm.material
-        tex_name = (mat.texture or "").upper()
-        if tex_name not in image_idx:
-            if tex_name not in tex_cache:
-                tex_cache[tex_name] = load_png(vfs, tex_name)
-            loaded = tex_cache[tex_name]
-            if loaded is None:
-                image_idx[tex_name] = None
-            else:
-                png, has_alpha = loaded
-                if texture_dir is None:
-                    images.append(gl.Image(bufferView=blob.add(png), mimeType="image/png", name=tex_name))
-                else:
-                    uri = f"{texture_dir}/{tex_name.rsplit('.', 1)[0].lower()}.png"
-                    target = out_path.parent / uri
-                    if not target.exists():
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(png)
-                    images.append(gl.Image(uri=uri, mimeType="image/png", name=tex_name))
-                textures.append(gl.Texture(source=len(images) - 1, sampler=0))
-                image_idx[tex_name] = (len(textures) - 1, has_alpha)
-        tex = image_idx[tex_name]
-        pbr = gl.PbrMetallicRoughness(metallicFactor=0.0, roughnessFactor=1.0)
-        gm = gl.Material(name=mat.name, pbrMetallicRoughness=pbr)
-        if tex is None:
-            c = mat.color
-            pbr.baseColorFactor = [c.r / 255, c.g / 255, c.b / 255, 1.0]
-        else:
-            pbr.baseColorTexture = gl.TextureInfo(index=tex[0])
-            if mat.alpha_function == zenkit.AlphaFunction.BLEND:
-                gm.alphaMode, gm.doubleSided = gl.BLEND, True
-            elif tex[1] or mrm.alpha_test:
-                gm.alphaMode, gm.alphaCutoff, gm.doubleSided = gl.MASK, 0.5, True
-        materials.append(gm)
-        primitives.append(gl.Primitive(attributes=attrs, indices=idx, material=len(materials) - 1))
-
-    node = gl.Node(mesh=0, name=out_path.stem)
-    if placements is not None:
-        inst = [game_instance(p, r) for p, r in placements]
-        t_acc = accessor(np.array([t for t, _ in inst], dtype=np.float32), gl.VEC3, gl.FLOAT, minmax=True)
-        r_acc = accessor(np.array([q for _, q in inst], dtype=np.float32), gl.VEC4, gl.FLOAT)
-        node.extensions = {INSTANCING: {"attributes": {"TRANSLATION": t_acc, "ROTATION": r_acc}}}
-
-    data = blob.bytes()
-    gltf = gl.GLTF2(
-        asset=gl.Asset(generator="gothic_extract", version="2.0"),
-        extensionsUsed=[INSTANCING] if placements is not None else [],
-        scene=0,
-        scenes=[gl.Scene(nodes=[0])],
-        nodes=[node],
-        meshes=[gl.Mesh(primitives=primitives, name=out_path.stem)],
-        accessors=accessors,
-        bufferViews=blob.views,
-        buffers=[gl.Buffer(byteLength=len(data))],
-        materials=materials,
-        images=images,
-        textures=textures,
-        samplers=[gl.Sampler(magFilter=gl.LINEAR, minFilter=gl.LINEAR_MIPMAP_LINEAR, wrapS=gl.REPEAT, wrapT=gl.REPEAT)],
-    )
-    gltf.set_binary_blob(data)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    gltf.save_binary(str(out_path))
+    b = _GlbBuilder(out_path, vfs, {} if tex_cache is None else tex_cache, texture_dir)
+    triangles = b.add_model(mrm, placements, out_path.stem, recenter)
+    b.save(placements is not None)
     return triangles
 
 
@@ -237,6 +266,7 @@ def export_vob_models(vfs: zenkit.Vfs, wd: WorldData, catalog: dict[str, ItemDef
     report = ModelsReport()
     entries = []
     tex_cache: dict = {}
+    combined = _GlbBuilder(out_dir.parent / "vobs.glb", vfs, tex_cache, None, bake=True)  # all world VOBs and ground items, textures embedded
     out_dir.mkdir(parents=True, exist_ok=True)
     for stale in list(out_dir.glob("*.glb")) + list((out_dir / "textures").glob("*.png")):
         stale.unlink()
@@ -250,9 +280,11 @@ def export_vob_models(vfs: zenkit.Vfs, wd: WorldData, catalog: dict[str, ItemDef
         mrm = zenkit.MultiResolutionMesh.load(node.open())
         fname = vis[: -len(".3DS")].lower() + ".glb"
         tris = mrm_to_glb(mrm, vfs, places, out_dir / fname, tex_cache, texture_dir="textures")
+        combined.add_model(mrm, places, vis[: -len(".3DS")].lower())
         entries.append({"visual": vis, "file": fname, "kind": kind, "instances": len(places), "triangles": tris})
         report.models += 1
         report.instances += len(places)
+    combined.save(False)
     (out_dir / "index.json").write_text(json.dumps(
         {"frame": "same as world.glb: (x/100, y/100, -z/100) of game coordinates", "extension": INSTANCING,
          "models": entries, "missing": report.missing,

@@ -16,6 +16,17 @@ OLDWORLD = ["STARTUP_OLDWORLD", "INIT_OLDWORLD", "B_ENTER_OLDWORLD*"]
 ADDONWORLD = ["STARTUP_ADDONWORLD", "INIT_ADDONWORLD", "B_ENTER_ADDONWORLD*"]
 DRAGONISLAND = ["STARTUP_DRAGONISLAND", "INIT_DRAGONISLAND", "B_ENTER_DRAGONISLAND*", "ENTER_DI_*"]
 
+# Chapter in which the player first reaches a world. Inserts outside any chapter function (world
+# startup, dialogs, events) cannot happen earlier, so they get this chapter.
+[g2nk.first_chapter]
+OLDWORLD = 2
+ADDONWORLD = 3
+DRAGONISLAND = 6
+
+# Developer-only code that is never reachable in play; its inserts would duplicate real ones.
+[g2nk.exclude_functions]
+ADDONWORLD = ["USEJOLY*"]
+
 [g1]
 root = "Gothic"
 version = "GOTHIC1"

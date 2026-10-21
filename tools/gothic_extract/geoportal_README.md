@@ -17,6 +17,7 @@ z pełnego wyniku ekstrakcji (`output/...`). Nie edytuj jej ręcznie, tylko wyge
 | Plik | Co | Uwagi |
 |---|---|---|
 | `world.glb` | siatka świata (teren, budynki) | metry, glTF Y-up, tekstury w środku |
+| `vobs.glb` | wszystkie statyczne obiekty świata (VOB-y: drzewa, beczki, belki, budynki z ZEN) w **jednym pliku** | metry, glTF Y-up, tekstury w środku; jeden zwykły węzeł na każde wystąpienie (bez `EXT_mesh_gpu_instancing`, bo Cesium ion go gubi; siatki są współdzielone); razem z przedmiotami leżącymi na ziemi |
 | `models/*.glb` | obiekty i przedmioty (drzewa, beczki, zioła…) | jeden plik na model, wszystkie wystąpienia jako instancje `EXT_mesh_gpu_instancing` |
 | `models/index.json` | lista modeli: plik, rodzaj (`vob`/`item`), liczba instancji | także `unhandled`: typy obiektów jeszcze nieeksportowanych |
 | `models/textures/*.png` | wspólne tekstury modeli | odwołania przez URI z plików `.glb` |
@@ -55,7 +56,7 @@ const model = await Cesium.Model.fromGltfAsync({
 | `script` | przedmiot | wstawiany przez skrypt przy starcie świata |
 | `container` | przedmiot | w skrzyni; `label` mówi, czy zamknięta, klucz, kombinacja zamka |
 | `npc` | przedmiot | w ekwipunku NPC (także zwykłych NPC i potworów); `ref` → `npcs.geojson`; `certainty`: `always`/`possible` |
-| `spawn` | postać | gdzie skrypt wstawia postać do świata; `chapter`: numer rozdziału, gdy wstawienie należy do funkcji rozdziału, `null` = start świata albo dialog; `ref` → `npcs.geojson` |
+| `spawn` | postać | gdzie skrypt wstawia postać do świata; `chapter`: numer rozdziału, gdy wstawienie należy do funkcji rozdziału, `null` = start świata albo dialog (w światach, do których wchodzi się dopiero w którymś rozdziale — Górnicza Dolina, rozdział 2 — te wstawienia dostają ten rozdział, bo wcześniej nie mogą zajść; wstawienia z dialogów i zdarzeń mogą w rzeczywistości nastąpić później); `ref` → `npcs.geojson` |
 | `routine` | postać | gdzie postać przebywa w ciągu dnia; `is_default: false` = rutyna po zadaniu/zdarzeniu (nazwa w `routine`); `ref` → `character_places.geojson` |
 
 `amount` = liczba sztuk w tym miejscu. `ref` = `id` obiektu w warstwie podanej w tabeli. `total` liczy tylko sztuki pewne (bez `possible`).
@@ -121,3 +122,13 @@ Wszystkie teksty są po polsku, w UTF-8.
 ## Rozmiar
 
 Warstwy i indeks to ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Modele dobrze jest serwować z CDN albo Cesium ion (który sam tnie `.glb` na 3D Tiles).
+
+## Światy w paczkach
+
+| Katalog | `world` | Uwagi |
+|---|---|---|
+| `dist/g2nk/khorinis` | `NEWWORLD` | Khorinis; `chapter = null` = start gry |
+| `dist/g2nk/gornicza-dolina` | `OLDWORLD` | Górnicza Dolina; `chapter` zawsze wypełnione (najwcześniej 2). Wstawienia startowe, z dialogów i zdarzeń mają rozdział 2 (pierwsze wejście do Doliny) — to dolna granica, nie dokładny moment. Łuki i kusze nie mają modelu podglądu (`model: null`), jak w Khorinis. |
+| `dist/g2nk/jarkendar` | `ADDONWORLD` | Jarkendar (Noc Kruka); `chapter` zawsze wypełnione (3 albo 4). Wstawienia startowe, z dialogów i zdarzeń mają rozdział 3 (`first_chapter` — pierwsze wejście do Jarkendaru) — to dolna granica, nie dokładny moment. Pominięto deweloperskie listy `USEJOLY*` (przedmioty, których gra nigdy nie wydaje; zdublowałyby potwory z rozdziału 4). Łuki i kusze nie mają modelu podglądu (`model: null`); skrzynie nie mają modelu (MDS nie jest eksportowany), jak w pozostałych światach. |
+
+Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy ogląda się osobno.

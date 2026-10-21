@@ -20,6 +20,8 @@ class GameConfig:
     anchor_lat: float
     anchor_h: float
     world_roots: dict[str, list[str]] = field(default_factory=dict)
+    exclude_functions: dict[str, list[str]] = field(default_factory=dict)  # per-world fnmatch patterns (debug/unused code)
+    first_chapters: dict[str, int] = field(default_factory=dict)  # chapter in which a world is first entered
 
 
 def _list_vdfs(root: Path, pattern: str, exclude: list[str]) -> list[str]:
@@ -46,6 +48,8 @@ def load_game(key: str) -> GameConfig:
         anchor_lat=float(anchor.get("lat", 0.0)),
         anchor_h=float(anchor.get("h", 0.0)),
         world_roots={k.upper(): v for k, v in entry.get("world_roots", {}).items()},
+        exclude_functions={k.upper(): v for k, v in entry.get("exclude_functions", {}).items()},
+        first_chapters={k.upper(): int(v) for k, v in entry.get("first_chapter", {}).items()},
     )
 
 
