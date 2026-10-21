@@ -5,7 +5,7 @@ and chapter-dependent inserts are all found. Arguments that are not plain pushes
 of constants come back as None.
 """
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 import zenkit
@@ -24,6 +24,7 @@ class CallSite:
     args: list[int | str | None]
     conditional: bool
     address: int
+    arg_syms: list[str | None] = field(default_factory=list)  # symbol name behind each pushed argument
 
 
 @dataclass
@@ -108,6 +109,13 @@ def _arg_value(script, ins: _Ins) -> int | str | None:
     return None
 
 
+def _arg_sym(script, ins: _Ins) -> str | None:
+    if ins.op in (Op.PUSHV, Op.PUSHVI):
+        sym = script.get_symbol_by_index(ins.symbol)
+        return sym.name if sym is not None else None
+    return None
+
+
 def _callee(script, ins: _Ins):
     if ins.op == Op.BE:
         return script.get_symbol_by_index(ins.symbol)
@@ -150,12 +158,40 @@ def scan_function(script, sym) -> list[CallSite]:
             continue
         n = callee.size
         args: list[int | str | None] = [None] * n
+        arg_syms: list[str | None] = [None] * n
         for j in range(n):
             p = k - n + j
             if p >= 0 and all(code[q].op in _PUSHES for q in range(p, k)):
                 args[j] = _arg_value(script, code[p])
+                arg_syms[j] = _arg_sym(script, code[p])
         conditional = any(b < ins.address < t for b, t in ranges)
-        out.append(CallSite(sym.name, callee.name, args, conditional, ins.address))
+        out.append(CallSite(sym.name, callee.name, args, conditional, ins.address, arg_syms))
+    return out
+
+
+@dataclass
+class Assignment:
+    caller: str
+    var: str
+    value: int | None
+    conditional: bool
+    address: int
+
+
+def scan_assignments(script, sym) -> list[Assignment]:
+    """Constant integer assignments `VAR = const` (value push, target push, MOVI) in one function."""
+    code = _idx(script).code(sym)
+    ranges = _cond_ranges(code)
+    out = []
+    for k, ins in enumerate(code):
+        if ins.op != Op.MOVI or k < 2 or code[k - 1].op != Op.PUSHV:
+            continue
+        target = script.get_symbol_by_index(code[k - 1].symbol)
+        if target is None or code[k - 2].op not in _PUSHES:
+            continue
+        value = _arg_value(script, code[k - 2])
+        conditional = any(b < ins.address < t for b, t in ranges)
+        out.append(Assignment(sym.name, target.name, value if isinstance(value, int) else None, conditional, ins.address))
     return out
 
 
@@ -181,7 +217,7 @@ def reachable_calls(script, root: str, callee_names: set[str], skip: list[str] =
         for c in scan_function(script, sym):
             c_cond = cond or c.conditional
             if c.callee in names:
-                out.append(CallSite(c.caller, c.callee, c.args, c_cond, c.address))
+                out.append(CallSite(c.caller, c.callee, c.args, c_cond, c.address, c.arg_syms))
             callee = script.get_symbol_by_name(c.callee)
             if callee is not None and not callee.is_external and callee.address > 0 and not _matches(callee.name, skip):
                 visit(callee, c_cond)
