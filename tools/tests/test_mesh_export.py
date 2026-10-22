@@ -52,3 +52,16 @@ def test_triangles_face_along_normals(exported):
         agree += int((dots > 0).sum())
         total += len(dots)
     assert agree / total > 0.95
+
+
+def test_triangulate_skip_lod_flag():
+    from types import SimpleNamespace as NS
+
+    from gothic_extract.mesh_export import _triangulate
+
+    def poly(lod):
+        return NS(is_portal=False, is_lod=lod, material_index=0, position_indices=[0, 1, 2], feature_indices=[0, 1, 2])
+
+    mesh = NS(materials=[NS(name="WALL")], polygons=[poly(False), poly(True)])
+    assert len(_triangulate(mesh)[0]) == 1  # G2: LOD polygons are dropped
+    assert len(_triangulate(mesh, skip_lod=False)[0]) == 2  # G1: the flag is unreliable, keep everything

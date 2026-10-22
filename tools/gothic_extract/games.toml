@@ -50,6 +50,9 @@ script_dat = "_work/DATA/scripts/_compiled/Gothic.dat"
 anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
 chapter_dispatcher = "B_KAPITELWECHSEL"
 
+# ZenKit sets the polygon LOD flag on ~96 % of the G1 world mesh (G2: none), which would drop almost all geometry.
+skip_lod_polygons = false
+
 # G1 has no B_ENTER_*: every world has STARTUP_<ZEN> / INIT_<ZEN> and the Colony's camps are sub-startups of STARTUP_WORLD.
 # STARTUP_WORLD_ORCS / STARTUP_WORLD_DEMO / STARTUP_AI_TESTLEVEL* are not wired to any world and stay out.
 [g1.world_roots]

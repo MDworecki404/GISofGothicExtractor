@@ -70,13 +70,13 @@ class Blob:
         return b"".join(self.parts)
 
 
-def _triangulate(mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _triangulate(mesh, skip_lod: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fan-triangulate polygons → (pos idx (n,3), feature idx (n,3), material idx (n,))."""
     mats = mesh.materials
     skip_mat = {i for i, m in enumerate(mats) if m.name.upper().startswith(_SKIP_PREFIXES)}
     P, F, M = [], [], []
     for poly in mesh.polygons:
-        if poly.is_portal or poly.is_lod or poly.material_index in skip_mat:
+        if poly.is_portal or (skip_lod and poly.is_lod) or poly.material_index in skip_mat:
             continue
         pi, fi = poly.position_indices, poly.feature_indices
         for k in range(1, len(pi) - 1):
@@ -86,7 +86,8 @@ def _triangulate(mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return np.asarray(P, dtype=np.int64), np.asarray(F, dtype=np.int64), np.asarray(M, dtype=np.int64)
 
 
-def export_world_glb(world: zenkit.World, vfs: zenkit.Vfs, out_path: Path) -> MeshStats:
+def export_world_glb(world: zenkit.World, vfs: zenkit.Vfs, out_path: Path, skip_lod: bool = True) -> MeshStats:
+    """skip_lod=False for games whose polygon LOD flag is not reliable (G1: it is set on ~96 % of the polygons)."""
     mesh = world.mesh
     positions = np.array([(p.x, p.y, p.z) for p in mesh.positions], dtype=np.float64)
     feats = mesh.features
@@ -99,7 +100,7 @@ def export_world_glb(world: zenkit.World, vfs: zenkit.Vfs, out_path: Path) -> Me
     positions[:, 2] *= -1
     normals[:, 2] *= -1
 
-    P, F, M = _triangulate(mesh)
+    P, F, M = _triangulate(mesh, skip_lod)
 
     stats = MeshStats(triangles=int(len(P)))
     blob = Blob()

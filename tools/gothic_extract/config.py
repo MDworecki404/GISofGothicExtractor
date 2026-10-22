@@ -29,6 +29,7 @@ class GameConfig:
     world_roots: dict[str, list[str]] = field(default_factory=dict)
     exclude_functions: dict[str, list[str]] = field(default_factory=dict)  # per-world fnmatch patterns (debug/unused code)
     first_chapters: dict[str, int] = field(default_factory=dict)  # chapter in which a world is first entered
+    skip_lod_polygons: bool = True  # False where ZenKit reports the LOD flag on nearly every polygon (G1)
     chapter_dispatcher: str | None = None  # function that branches on the new chapter (G1: B_KAPITELWECHSEL)
     worlds: dict[str, "WorldEntry"] = field(default_factory=dict)  # ZEN name (upper case) -> package slug and Polish name
 
@@ -59,6 +60,7 @@ def load_game(key: str) -> GameConfig:
         world_roots={k.upper(): v for k, v in entry.get("world_roots", {}).items()},
         exclude_functions={k.upper(): v for k, v in entry.get("exclude_functions", {}).items()},
         first_chapters={k.upper(): int(v) for k, v in entry.get("first_chapter", {}).items()},
+        skip_lod_polygons=entry.get("skip_lod_polygons", True),
         chapter_dispatcher=entry.get("chapter_dispatcher"),
         worlds={k.upper(): WorldEntry(v["slug"], v["name_pl"], v.get("provisional_name", False))
                 for k, v in entry.get("worlds", {}).items()},
