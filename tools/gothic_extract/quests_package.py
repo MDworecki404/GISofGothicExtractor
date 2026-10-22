@@ -143,11 +143,13 @@ def summarize(world: str, qs: list[dict]) -> str:
             f"bez miejsc na mapie {noplace}")
 
 
-def build(game: str, pkg: Path, out_root: Path) -> dict:
+def build(game: str, pkg: Path, out_root: Path, quests: list[dict] | None = None,
+          worlds: dict[str, dict[str, set[str]]] | None = None) -> dict:
+    """quests / worlds: already extracted quests and load_worlds(out_root), to share them between packages."""
     meta = _read(pkg / "metadata.json")
     world = meta["world"]
-    worlds = load_worlds(out_root)
-    quests = extract_quests(make_vm(load_game(game).script_dat))
+    worlds = worlds if worlds is not None else load_worlds(out_root)
+    quests = quests if quests is not None else extract_quests(make_vm(load_game(game).script_dat))
     unassigned = [q for q in quests if not quest_worlds(q, worlds)]
     idx = PackageIndex(pkg)
     mine = build_world_quests(quests, world, worlds, idx)
