@@ -194,7 +194,7 @@ def _attach_origins(script, events: list[Event], scans, infos, uses) -> None:
                 found.append(Origin("dialog", name, npc, cur, chapter))
             if cur in uses:
                 found.append(Origin("item", uses[cur], None, cur, _chapter_of_name(cur)))
-            for up in callers_of.get(cur, ()):
+            for up in sorted(callers_of.get(cur, ())):
                 if up not in seen:
                     seen.add(up)
                     todo.append(up)
