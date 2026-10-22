@@ -154,7 +154,8 @@ def resolve_model(code: str, catalog: dict, previews: dict[str, str]) -> tuple[s
     return previews[visual], None
 
 
-def build_geoportal(src: Path, dst: Path) -> dict:
+def build_geoportal(src: Path, dst: Path, guild_names: dict[str, str | None] | None = None) -> dict:
+    """guild_names: guild code -> Polish name (see guilds.guild_names_pl); the world's metadata gets the codes in use."""
     dst.mkdir(parents=True, exist_ok=True)
     catalog = _read(src / "catalog_items.json")
     items = _read(src / "items.geojson")["features"]
@@ -252,6 +253,9 @@ def build_geoportal(src: Path, dst: Path) -> dict:
 
     meta = _read(src / "metadata.json")
     meta.pop("mesh", None)
+    if guild_names is not None:
+        used = sorted({f["properties"]["guild_name"] for f in npcs})
+        meta["guild_names"] = {code: guild_names.get(code) for code in used}
     meta["package"] = {
         "version": 3,  # 2: `model` on items and containers; 3: `model` points to models/previews/
         "counts": {"search_items": sum(e["type"] == "item" for e in entries),
@@ -270,8 +274,16 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="gothic_extract.geoportal", description="Build the geoportal v1 package")
     ap.add_argument("--src", required=True, type=Path, help="full extraction output, e.g. output/g2nk/newworld")
     ap.add_argument("--dst", required=True, type=Path, help="package folder, e.g. dist/g2nk/khorinis")
+    ap.add_argument("--game", help="key from games.toml; adds guild_names (Polish names from the game's scripts)")
     args = ap.parse_args(argv)
-    pkg = build_geoportal(args.src, args.dst)
+    guild_names = None
+    if args.game:
+        from .config import load_game
+        from .guilds import guild_names_pl
+        from .script_vm import make_vm
+
+        guild_names = guild_names_pl(make_vm(load_game(args.game).script_dat))
+    pkg = build_geoportal(args.src, args.dst, guild_names)
     for k, v in pkg["counts"].items():
         print(f"  {k}: {v}")
     print(f"  files: {', '.join(pkg['files'])}")

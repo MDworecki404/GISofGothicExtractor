@@ -119,3 +119,16 @@ def test_every_ref_resolves(dist, index):
     for e in index["entries"]:
         for p in e["places"]:
             assert p["ref"] in ids[layer_for[p["kind"]]], (e["id"], p)
+
+
+def test_guild_names_listed_for_guilds_in_the_world(tmp_path, g2_cfg, g2_vm):
+    from gothic_extract.guilds import guild_names_pl
+
+    src = tmp_path / "full"
+    run_extract(["--game", "g2nk", "--world", "NEWWORLD", "--out", str(src), "--skip-mesh", "--skip-models"])
+    dst = tmp_path / "dist"
+    build_geoportal(src, dst, guild_names_pl(g2_vm))
+    names = json.loads((dst / "metadata.json").read_text("utf-8"))["guild_names"]
+    used = {f["properties"]["guild_name"] for f in json.loads((dst / "npcs.geojson").read_text("utf-8"))["features"]}
+    assert set(names) == used
+    assert names["MIL"] == "Strażnik"
