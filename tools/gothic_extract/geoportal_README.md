@@ -1,8 +1,19 @@
-# Dane geoportalu — paczka v1
+# Dane geoportalu — paczka v4
 
-Dane jednego świata gry dla geoportalu, którego v1 służy do jednego: **wyszukać przedmiot albo
-unikatową postać i pokazać, gdzie są**. Paczkę generuje `python -m gothic_extract.geoportal`
-z pełnego wyniku ekstrakcji (`output/...`). Nie edytuj jej ręcznie, tylko wygeneruj ponownie.
+Dane jednego świata gry dla geoportalu: **wyszukać przedmiot, unikatową postać albo zadanie (quest)
+i pokazać, gdzie są**. Paczki wszystkich światów gry buduje jedno polecenie (z `PYTHONPATH=tools`
+w repozytorium ekstraktora):
+
+```
+python -m gothic_extract.package --game g1              # z istniejącej ekstrakcji output/g1/<zen>
+python -m gothic_extract.package --game g2nk --extract  # najpierw pełna ekstrakcja każdego świata
+python -m gothic_extract.validate                       # sama walidacja paczek g1 i g2nk w dist/
+```
+
+`package` robi dla każdego świata: warstwy i indeks (`gothic_extract.geoportal`), questy
+(`gothic_extract.quests_package`, wersja paczki 4) i prędkości ruchu (`gothic_extract.movement_speeds`),
+a na końcu waliduje paczki. Nie edytuj paczki ręcznie, tylko wygeneruj ją ponownie. Same `geoportal`
+i `quests_package` uruchamiane osobno zostawiają paczkę niedokończoną (`geoportal` zapisuje wersję 3).
 
 ## Układ współrzędnych
 
@@ -11,6 +22,21 @@ z pełnego wyniku ekstrakcji (`output/...`). Nie edytuj jej ręcznie, tylko wyge
 - Wszystkie współrzędne w plikach to WGS84 `[lon, lat, h]`, `h` w metrach nad elipsoidą.
   Część terenu leży poniżej 0 m, więc **wyłącz globus** albo test głębokości względem terenu.
 - `game_pos` (w `containers` i `characters`) to oryginalne współrzędne gry (cm), do przeliczeń i debugowania.
+
+## `metadata.json`
+
+| Pole | Znaczenie |
+|---|---|
+| `game` | `g2nk` albo `g1` |
+| `world` | nazwa pliku ZEN świata bez rozszerzenia (`NEWWORLD`, `WORLD`…) |
+| `anchor`, `axes`, `gltf_axes` | kotwica WGS84 `{lon, lat, h}` i osie świata (opis wyżej) |
+| `package.version` | 4 |
+| `package.counts` | `search_items`, `search_items_with_model`, `search_characters`, `items`, `containers`, `npcs`, `character_places`, `quests`; zgadzają się z zawartością plików (sprawdza `gothic_extract.validate`) |
+| `package.files` | pliki i katalogi paczki (katalog z `/` na końcu) |
+| `guild_names` | kod gildii → polska nazwa **z gry** (tablica `TXT_GUILDS` skryptów), dla gildii występujących w tym świecie; `null`, gdy gra nie ma tekstu. Kody to wartości `guild_name` w `npcs.geojson` i `characters.geojson`. |
+| `movement_speeds_m_s` | prędkości gracza w m/s: `walk`, `run`, `sneak`, `walk_armed`, liczone z pętli animacji szkieletu HUMANS |
+| `movement_speeds_animations` | nazwy animacji `.MAN`, z których policzono prędkości |
+| `zenkit_version`, `generated_at` | informacyjne |
 
 ## Modele 3D
 
@@ -119,9 +145,30 @@ wystąpienia obiektu w pozycjach świata. Używaj ich do mapy, nie do karty prze
 
 Wszystkie teksty są po polsku, w UTF-8.
 
+## `quests.json` — zadania
+
+Wpis `type: "quest"` w `search_index.json` jest skrócony (`id`, `code`, `name`, `category`: `Misja`/`Notatka`,
+`giver`, `chapter`, `places` — tylko miejsca pojawienia się zleceniodawcy i celów). Pełne dane są w `quests.json`
+(`{version, game, world, quests: [...]}`). Klucz zadania to jego nazwa w dzienniku; stałe tematu o tej samej nazwie
+(`TOPIC_X` w G2, `CH3_X` w G1) są aliasami jednego zadania (`aliases`), `id` = `quest:<code>`.
+
+| Pole | Znaczenie |
+|---|---|
+| `section` | `mission` albo `note` |
+| `chapter`, `chapter_source` | rozdział, który zadanie wymaga (`function`/`condition`), albo `null` |
+| `giver`, `giver_certainty`, `giver_candidates` | zleceniodawca (`{code, name}`) albo lista kandydatów |
+| `order` | `"script"`: etapy w kolejności występowania w skryptach, nie w kolejności gry |
+| `stages` | etapy: `kind` (`create`/`entry`/`status`/`close`), `text`, `status`, `function`, `sources` (dialog / użycie przedmiotu), `conditional` |
+| `characters`, `items` | postacie i przedmioty zadania z `role` i `certainty`; `in_index: true` ⇒ `id` wskazuje wpis w `search_index.json`, inaczej `id: null` |
+| `rewards` | `xp` i `xp_certainty` |
+| `worlds` | wszystkie światy gry (nazwy ZEN), w których zadanie ma udział; zadanie wielo-światowe jest w paczce **każdego** z nich pod tym samym `id`, a `places` zawiera tylko miejsca z danego świata |
+| `places` | miejsca na mapie: jak w indeksie (`kind`, `lon`, `lat`, `h`, `ref`…) plus `role` (`giver`/`target`/`stage`), `npc_code`, `certainty` |
+
+Zadanie, w którym żaden świat nie ma udziału, nie trafia do żadnej paczki.
+
 ## Rozmiar
 
-Warstwy i indeks to ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Modele dobrze jest serwować z CDN albo Cesium ion (który sam tnie `.glb` na 3D Tiles).
+Khorinis: warstwy i indeks ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Światy G1 są mniejsze (Kolonia: `world.glb` ~40 MB, `vobs.glb` ~15 MB, `models/` ~31 MB; pozostałe cztery światy po kilka MB na plik `.glb`). Modele dobrze jest serwować z CDN albo Cesium ion (który sam tnie `.glb` na 3D Tiles).
 
 ## Światy w paczkach
 
@@ -131,4 +178,20 @@ Warstwy i indeks to ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Modele dobrze 
 | `dist/g2nk/gornicza-dolina` | `OLDWORLD` | Górnicza Dolina; `chapter` zawsze wypełnione (najwcześniej 2). Wstawienia startowe, z dialogów i zdarzeń mają rozdział 2 (pierwsze wejście do Doliny) — to dolna granica, nie dokładny moment. Łuki i kusze nie mają modelu podglądu (`model: null`), jak w Khorinis. |
 | `dist/g2nk/jarkendar` | `ADDONWORLD` | Jarkendar (Noc Kruka); `chapter` zawsze wypełnione (3 albo 4). Wstawienia startowe, z dialogów i zdarzeń mają rozdział 3 (`first_chapter` — pierwsze wejście do Jarkendaru) — to dolna granica, nie dokładny moment. Pominięto deweloperskie listy `USEJOLY*` (przedmioty, których gra nigdy nie wydaje; zdublowałyby potwory z rozdziału 4). Łuki i kusze nie mają modelu podglądu (`model: null`); skrzynie nie mają modelu (MDS nie jest eksportowany), jak w pozostałych światach. |
 
+| `dist/g1/kolonia` | `WORLD` | Kolonia Karna (nazwa robocza). Główny świat G1 z obozami (Stary, Nowy, Bractwa), Wieżą Demonów i powierzchnią. `chapter = 2` dla potworów z respawnu rozdziału 2, reszta `null` (start gry, dialogi, zdarzenia). |
+| `dist/g1/wolna-kopalnia` | `FREEMINE` | Wolna Kopalnia (nazwa robocza); `chapter = null` (patrz „Różnice Gothic 1”). |
+| `dist/g1/stara-kopalnia` | `OLDMINE` | Stara Kopalnia (nazwa robocza); `chapter = null`. |
+| `dist/g1/cmentarzysko-orkow` | `ORCGRAVEYARD` | Cmentarzysko orków (nazwa z dziennika gry, temat `CH3_ORCGRAVEYARD`); `chapter = null`. |
+| `dist/g1/swiatynia-orkow` | `ORCTEMPEL` | Świątynia orków (nazwa robocza); `chapter = null`. |
+
 Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy ogląda się osobno.
+
+## Różnice Gothic 1 względem Gothic 2
+
+- `metadata.json → game` = `g1`; poza tą listą kontrakt jest ten sam co w g2nk.
+- **Gildie**: kody G1 to m.in. `GRD`, `STT`, `ORG`, `SLD`, `TPL`, `GUR`, `KDF`, `KDW`, `NOV`, `BAU`, `SFB`, `DMB`, `VLK`, `BAB`; potwory i orkowie też mają „gildie” (`SCAVENGER`, `ORCWARRIOR`…). Polskie nazwy bierz z `guild_names`, nie z kodu. Wartość 1 to w G1 jednocześnie `GIL_EBR` (Magnat) i `GIL_HUMAN`; `guild_name` ma kod `HUMAN`, a `guild_names.HUMAN` = „Magnat”. Gildia `NONE` ma w grze tekst „(brak)”.
+- **Rozdziały**: G1 nie ma funkcji nazwanych rozdziałem ani `B_ENDCHAPTER`; zmiana rozdziału to bloki `if (neues_Kapitel == n)` w `B_KAPITELWECHSEL`. `chapter` wstawienia NPC wypełnia się tylko dla funkcji wołanych wyłącznie z takiego bloku (dziś: respawn potworów, rozdział 2). Pozostałe wstawienia (start świata, dialogi, zdarzenia) mają `null`. W Wolnej Kopalni, Starej Kopalni, na cmentarzysku i w świątyni `null` znaczy „nie ustalono”, bo skrypty nie wiążą pierwszego wejścia do nich z rozdziałem (w Kolonii `null` to start gry). Zadania G1 mają `chapter` głównie `null`.
+- **Światy**: pięć plików ZEN; jedna instancja NPC może być w kilku z nich (np. `TPL_1400_GORNABAR` w Kolonii i Starej Kopalni) i trafia do indeksu każdego świata, w którym jej imię jest tam unikatowe. Nazwy światów (poza cmentarzyskiem) są robocze.
+- **Skrypty**: punkty startowe to `STARTUP_<ZEN>`; obozy Kolonii to podfunkcje `STARTUP_SUB_*` wołane z `STARTUP_WORLD`. Zadania nie mają zmiennych `MIS_*`, tylko jawne statusy (`LOG_RUNNING`, `LOG_SUCCESS`).
+- **Siatka świata**: ZenKit ustawia w G1 flagę LOD na prawie każdym wielokącie, więc nie służy ona do odrzucania geometrii (w g2nk wielokąty LOD są pomijane). Kilka materiałów nie ma tekstury i ma kolor materiału.
+- **Animacje**: prędkości ruchu liczone z tych samych animacji HUMANS co w G2 (`HUMANS-S_WALKL`, `RUNL`, `SNEAKL`, `HUMANS_1HST1-S_1HWALKL`).
