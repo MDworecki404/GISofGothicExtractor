@@ -27,6 +27,20 @@ DRAGONISLAND = 6
 [g2nk.exclude_functions]
 ADDONWORLD = ["USEJOLY*"]
 
+# Package slug and Polish name per ZEN (names are the established ones).
+[g2nk.worlds.NEWWORLD]
+slug = "khorinis"
+name_pl = "Khorinis"
+[g2nk.worlds.OLDWORLD]
+slug = "gornicza-dolina"
+name_pl = "Górnicza Dolina"
+[g2nk.worlds.ADDONWORLD]
+slug = "jarkendar"
+name_pl = "Jarkendar"
+[g2nk.worlds.DRAGONISLAND]
+slug = "irdorath"
+name_pl = "Irdorath"
+
 [g1]
 root = "Gothic"
 version = "GOTHIC1"
@@ -34,3 +48,38 @@ vdf_glob = "Data/*.vdf"
 vdf_exclude = ["Speech*", "sound*"]
 script_dat = "_work/DATA/scripts/_compiled/Gothic.dat"
 anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
+chapter_dispatcher = "B_KAPITELWECHSEL"
+
+# G1 has no B_ENTER_*: every world has STARTUP_<ZEN> / INIT_<ZEN> and the Colony's camps are sub-startups of STARTUP_WORLD.
+# STARTUP_WORLD_ORCS / STARTUP_WORLD_DEMO / STARTUP_AI_TESTLEVEL* are not wired to any world and stay out.
+[g1.world_roots]
+WORLD = ["STARTUP_WORLD", "INIT_WORLD"]
+FREEMINE = ["STARTUP_FREEMINE", "INIT_FREEMINE"]
+OLDMINE = ["STARTUP_OLDMINE", "INIT_OLDMINE"]
+ORCGRAVEYARD = ["STARTUP_ORCGRAVEYARD", "INIT_ORCGRAVEYARD"]
+ORCTEMPEL = ["STARTUP_ORCTEMPEL", "INIT_ORCTEMPEL"]
+
+# No [g1.first_chapter]: the scripts do not tie the first entry into the mines, the graveyard or the temple to a
+# chapter (those inserts are triggered from dialogs), so their startup inserts keep chapter = null.
+
+# Package slug and Polish name per ZEN. The game has no names for the worlds; all names are working names.
+[g1.worlds.WORLD]
+slug = "kolonia"
+name_pl = "Kolonia Karna"
+provisional_name = true
+[g1.worlds.FREEMINE]
+slug = "wolna-kopalnia"
+name_pl = "Wolna Kopalnia"
+provisional_name = true
+[g1.worlds.OLDMINE]
+slug = "stara-kopalnia"
+name_pl = "Stara Kopalnia"
+provisional_name = true
+[g1.worlds.ORCGRAVEYARD]
+slug = "cmentarzysko-orkow"
+name_pl = "Cmentarzysko orków"
+provisional_name = true
+[g1.worlds.ORCTEMPEL]
+slug = "swiatynia-orkow"
+name_pl = "Świątynia orków"
+provisional_name = true

@@ -10,6 +10,13 @@ GAMES_FILE = Path(__file__).with_name("games.toml")
 
 
 @dataclass
+class WorldEntry:
+    slug: str
+    name_pl: str
+    provisional_name: bool = False  # name_pl is a working name, not taken from the game
+
+
+@dataclass
 class GameConfig:
     key: str
     root: Path
@@ -22,6 +29,8 @@ class GameConfig:
     world_roots: dict[str, list[str]] = field(default_factory=dict)
     exclude_functions: dict[str, list[str]] = field(default_factory=dict)  # per-world fnmatch patterns (debug/unused code)
     first_chapters: dict[str, int] = field(default_factory=dict)  # chapter in which a world is first entered
+    chapter_dispatcher: str | None = None  # function that branches on the new chapter (G1: B_KAPITELWECHSEL)
+    worlds: dict[str, "WorldEntry"] = field(default_factory=dict)  # ZEN name (upper case) -> package slug and Polish name
 
 
 def _list_vdfs(root: Path, pattern: str, exclude: list[str]) -> list[str]:
@@ -50,6 +59,9 @@ def load_game(key: str) -> GameConfig:
         world_roots={k.upper(): v for k, v in entry.get("world_roots", {}).items()},
         exclude_functions={k.upper(): v for k, v in entry.get("exclude_functions", {}).items()},
         first_chapters={k.upper(): int(v) for k, v in entry.get("first_chapter", {}).items()},
+        chapter_dispatcher=entry.get("chapter_dispatcher"),
+        worlds={k.upper(): WorldEntry(v["slug"], v["name_pl"], v.get("provisional_name", False))
+                for k, v in entry.get("worlds", {}).items()},
     )
 
 

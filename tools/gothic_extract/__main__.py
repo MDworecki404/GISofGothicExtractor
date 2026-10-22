@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from .catalog import build_item_catalog
+from .chapters import function_chapters
 from .config import load_game
 from .export_geojson import write_outputs
 from .mesh_export import export_world_glb
@@ -41,7 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     pats = cfg.exclude_functions.get(args.world.upper(), [])
     if pats:
         exclude |= {s.name.upper() for s in functions(vm) if any(fnmatch(s.name.upper(), p.upper()) for p in pats)}
-    npcs = extract_npcs(vm, resolver, exclude, cfg.first_chapters.get(args.world.upper()))
+    chapter_of = function_chapters(vm, cfg.chapter_dispatcher) if cfg.chapter_dispatcher else None
+    npcs = extract_npcs(vm, resolver, exclude, cfg.first_chapters.get(args.world.upper()), chapter_of)
     script_items = extract_script_items(vm, resolver, exclude)
     mesh = None
     if not args.skip_mesh:
