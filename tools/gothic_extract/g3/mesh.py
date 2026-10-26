@@ -79,6 +79,38 @@ def _element(data: bytes, i: int, end: int, strings: list[str] | None) -> tuple[
     return MeshElement(material, pos, normals, uvs, idx), r
 
 
+def _lod_names(data: bytes) -> list[str]:
+    """Mesh names of an eCResourceMeshLoD_PS (.xlmsh), most detailed first."""
+    if data.startswith(b"GENOMFLE"):
+        gf = parse_genomfle(data)
+        return [s for s in gf.strings if s.lower().endswith(".xcmsh")]
+    names, i = [], 0
+    while (j := data.lower().find(b".xcmsh", i)) != -1:
+        k = j
+        while k > 2 and struct.unpack_from("<H", data, k - 2)[0] != j + 6 - k:
+            k -= 1
+            if j - k > 260:
+                break
+        names.append(data[k:j + 6].decode("latin-1"))
+        i = j + 6
+    return names
+
+
+def load_mesh(fs, name: str) -> list[MeshElement] | None:
+    """Mesh elements of a .xcmsh, or of the most detailed mesh of a .xlmsh; None when the file is missing or
+    in a format this reader does not know."""
+    data = fs.find_name(name)
+    if data is None:
+        return None
+    if name.lower().endswith(".xlmsh"):
+        names = _lod_names(data)
+        return load_mesh(fs, names[0]) if names else None
+    try:
+        return read_xcmsh(data)
+    except (FormatError, IndexError, UnicodeDecodeError):
+        return None
+
+
 def read_xcmsh(data: bytes) -> list[MeshElement]:
     if data.startswith(b"GENOMFLE"):
         gf = parse_genomfle(data)

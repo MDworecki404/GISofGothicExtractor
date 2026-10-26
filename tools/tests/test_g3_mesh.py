@@ -34,3 +34,17 @@ def test_every_landscape_cell_reads(g3_fs):
             els = read_xcmsh(g3_fs.find(p))
             assert els, p
             assert all(el.indices.max() < len(el.positions) for el in els), p
+
+
+def test_old_object_version_with_name_and_guid(g3_fs):
+    # class version 1: the object's name and GUID come before the properties
+    (el, *_) = read_xcmsh(g3_fs.find_name("G3_Object_Shelfstuff_Plates_03.xcmsh"))
+    assert len(el.positions) > 0 and el.indices.max() < len(el.positions)
+
+
+def test_lod_mesh_resolves_to_its_most_detailed_mesh(g3_fs):
+    from gothic_extract.g3.mesh import load_mesh
+
+    els = load_mesh(g3_fs, "G3_Object_Interact_Alchemy_Table_01.xlmsh")
+    assert els and len(els[0].positions) > 0
+    assert load_mesh(g3_fs, "nie_ma_takiej.xcmsh") is None

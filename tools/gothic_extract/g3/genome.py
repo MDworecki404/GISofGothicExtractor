@@ -11,8 +11,8 @@ bytes). In the inline variant this list is the string table of the file. `Genome
 Property object (bCAccessorPropertyObject): u16 1, u8 present; when present: u16 1, u8 1, u16 class (string),
 u16 1, u8 0, u16 class version, u16 class version, u32 size (from the next byte to the end of the object),
 u16 30, u32 property count, properties (u16 name, u16 type, u16 30, u32 size, data), then the class's own data
-up to the end of the object. In templates without the GENOMFLE header, u16 2 and 20 more bytes come before
-the u16 30.
+up to the end of the object. Objects of class version 1 (old templates and meshes) have the object's name
+(a string) and a GUID (16 bytes + u32) before the u16 30.
 """
 import struct
 import uuid
@@ -213,9 +213,10 @@ def read_property_object(r: Reader, strings: list[str] | None) -> PropertyObject
     r.u16()
     size = r.u32()
     end = r.pos + size
-    if r.u16_at(r.pos) == 2:
-        # templates saved without the GENOMFLE header: u16 2 + 20 bytes (a bCGuid, meaning unknown) first
-        r.take(22)
+    if class_version == 1:
+        # old objects (templates and meshes saved without GENOMFLE, …): object name + GUID (16 bytes + u32)
+        r.string(strings)
+        r.take(20)
     r.expect(PROP_VERSION, 2, f"{cls} property version")
     props: dict[str, Prop] = {}
     for _ in range(r.u32()):
