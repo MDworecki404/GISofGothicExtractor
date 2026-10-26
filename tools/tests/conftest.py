@@ -90,3 +90,24 @@ def g3_fs(g3_cfg):
     from gothic_extract.g3.archive import open_g3fs
 
     return open_g3fs(g3_cfg)
+
+
+@pytest.fixture(scope="session")
+def g3_strings(g3_fs):
+    from gothic_extract.g3.strings import load_strings
+
+    return load_strings(g3_fs)
+
+
+@pytest.fixture(scope="session")
+def g3_templates(g3_fs):
+    from gothic_extract.g3.templates import load_templates
+
+    return load_templates(g3_fs)
+
+
+@pytest.fixture(scope="session")
+def g3_catalog(g3_templates, g3_strings):
+    from gothic_extract.g3.catalog import build_g3_catalog
+
+    return build_g3_catalog(g3_templates, g3_strings)
