@@ -33,3 +33,11 @@ def test_world_references_resolve_to_template(g3_templates):
     # world entities (creator) and inventory stacks point at the template's content entity (entity 1)
     assert g3_templates["{949268a2-8274-4859-8903-bf7a7fec50aa}"].name == "It_Plant_Perm_01"
     assert g3_templates["{aa968670-912b-40a6-9241-715851931dd2}"].name == "It_Gold"
+
+
+def test_entity_inside_unreadable_group_template_resolves(g3_templates, g3_catalog):
+    # NPC stacks (Abbas, Campa, Giacomo) point at an entity of the group template
+    # Nature_Misc_Groups_01_G3_ItemGroup_Tablestuff_02.tple, which the entity reader cannot parse;
+    # its creator (the item template) is read from the raw template-entity header instead
+    t = g3_templates["{6d38c316-ef3e-445c-801e-08647deaa5a3}"]
+    assert t.name in g3_catalog
