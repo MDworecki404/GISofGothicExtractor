@@ -17,3 +17,13 @@ def test_unknown_items_reported(g3_out):
     codes = {f["properties"]["code"] for f in feats}
     if codes - set(catalog):
         assert "unknown item code" in (g3_out / "report.txt").read_text("utf-8")
+
+
+def test_treasure_sets_written(g3_out):
+    sets = json.loads((g3_out / "treasure_sets.json").read_text("utf-8"))["sets"]
+    small = sets["TS_Treasure_Small"]
+    assert small["kind"] == "chest" and small["min_stacks"] == 3 and small["holders"] == 480
+    assert {"code": "It_Bread", "name": "Chleb", "category": "Jedzenie", "amount": 2} in small["items"]
+    tjalf = next(f for f in json.loads((g3_out / "containers.geojson").read_text("utf-8"))["features"]
+                 if f["properties"]["key"] == "It_Key_Tjalf")
+    assert tjalf["properties"]["treasure_sets"] == ["TS_Unique_Weapons"]

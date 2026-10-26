@@ -13,7 +13,29 @@ from .archive import open_g3fs
 from .catalog import build_g3_catalog
 from .strings import load_strings
 from .templates import load_templates
+from .treasure import load_treasure_sets
 from .world import WorldStats, extract_world
+
+
+def write_treasure_sets(out: Path, sets: dict, catalog: dict, wd, npcs) -> None:
+    """treasure_sets.json: every set used in the world, with Polish item names and the number of holders."""
+    holders: dict[str, int] = {}
+    for rec in [*wd.containers, *npcs]:
+        for code in rec.treasure_sets:
+            holders[code] = holders.get(code, 0) + 1
+    data = {}
+    for code in sorted(holders):
+        s = sets.get(code)
+        if s is None:
+            continue
+        data[code] = {
+            "kind": s.kind, "distribution": s.distribution, "min_stacks": s.min_stacks, "max_stacks": s.max_stacks,
+            "holders": holders[code],
+            "items": [{"code": c, "name": catalog[c].name if c in catalog else None,
+                       "category": catalog[c].category if c in catalog else None, "amount": n} for c, n in s.items],
+        }
+    (out / "treasure_sets.json").write_text(json.dumps({"version": 1, "sets": data}, ensure_ascii=False,
+                                                       separators=(",", ":")), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     wd, npcs = extract_world(fs, cfg, args.world, templates, strings, stats)
     print(f"[4/4] writing GeoJSON to {args.out}", flush=True)
     report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, [], None)
+
+    write_treasure_sets(args.out, load_treasure_sets(fs, templates), catalog, wd, npcs)
 
     meta_path = args.out / "metadata.json"
     meta = json.loads(meta_path.read_text("utf-8"))

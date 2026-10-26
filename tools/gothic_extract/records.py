@@ -35,6 +35,7 @@ class ContainerRec:
     key: str | None
     pick_string: str | None
     contents: list[tuple[str, int]]
+    treasure_sets: list[str] = field(default_factory=list)  # G3: random loot sets (codes); empty in G1/G2
 
 
 @dataclass

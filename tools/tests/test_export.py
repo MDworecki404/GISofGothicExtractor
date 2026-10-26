@@ -53,3 +53,15 @@ def test_all_output_files_present(full_run):
     for fn in ["items.geojson", "containers.geojson", "npcs.geojson", "npc_routines.geojson", "vobs.geojson",
                "waypoints.geojson", "freepoints.geojson", "catalog_items.json", "metadata.json", "report.txt"]:
         assert (full_run / fn).exists(), fn
+
+
+def test_treasure_sets_only_when_present(tmp_path, small_inputs):
+    from gothic_extract.records import ContainerRec
+
+    wd = small_inputs["wd"]
+    wd.containers = [ContainerRec(1, "CHEST", None, (0.0, 0.0, 0.0), False, None, None, []),
+                     ContainerRec(2, "CHEST", None, (0.0, 0.0, 0.0), False, None, None, [], ["TS_Treasure_Small"])]
+    write_outputs(tmp_path, **small_inputs)
+    feats = json.loads((tmp_path / "containers.geojson").read_text("utf-8"))["features"]
+    assert "treasure_sets" not in feats[0]["properties"]  # G1/G2 output stays as it was
+    assert feats[1]["properties"]["treasure_sets"] == ["TS_Treasure_Small"]

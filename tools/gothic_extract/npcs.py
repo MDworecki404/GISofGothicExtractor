@@ -51,6 +51,7 @@ class NpcRec:
     name_unique_in_game: bool = False  # no other NPC instance in the whole script has this name
     is_human: bool = False  # guild below GIL_SEPERATOR_HUM, incl. GIL_NONE (people, not monsters/orcs)
     inserts_in_game: int = 0  # Wld_InsertNpc calls for this instance across all worlds
+    treasure_sets: list[str] = field(default_factory=list)  # G3: random loot sets (codes); empty in G1/G2
 
 
 def _chapter(func_name: str) -> int | None:

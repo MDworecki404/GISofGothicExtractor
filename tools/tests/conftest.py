@@ -128,3 +128,10 @@ def g3_out(g3_cfg, tmp_path_factory):
     out = tmp_path_factory.mktemp("g3") / "g3_world_01"
     assert main(["--out", str(out)]) == 0
     return out
+
+
+@pytest.fixture(scope="session")
+def g3_treasure(g3_fs, g3_templates):
+    from gothic_extract.g3.treasure import load_treasure_sets
+
+    return load_treasure_sets(g3_fs, g3_templates)

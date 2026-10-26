@@ -65,3 +65,11 @@ def test_alignment_names_from_game(g3_strings):
     names = alignment_names_pl(g3_strings)
     assert names["ORC"] == "Orkowie" and names["REB"] == "Buntownicy"
     assert set(names) == set(ALIGNMENT_CODES.values())
+
+
+def test_treasure_sets_on_holders(g3_world):
+    wd, npcs = g3_world
+    tjalf = next(c for c in wd.containers if c.key == "It_Key_Tjalf")
+    assert tjalf.treasure_sets == ["TS_Unique_Weapons"]
+    inog = next(n for n in npcs if n.code == "Inog")
+    assert inog.treasure_sets == ["TS_Plunder_Reb_Elite", "TS_Weaponry_Merc_2H", "TS_PickPocket_Medium"]

@@ -65,7 +65,7 @@ def active_sectors(fs: G3Fs, world: str, exclude: list[str]) -> list[str]:
     return [files[s] for s in enabled if s in files]
 
 
-def _stacks(obj: PropertyObject, data: bytes, strings: list[str]) -> list[PropertyObject]:
+def stacks(obj: PropertyObject, data: bytes, strings: list[str]) -> list[PropertyObject]:
     """gCInventoryStack objects inside the class data of gCInventory_PS."""
     out, i = [], obj.data_start
     while (j := data.find(_OBJ_HEAD, i, obj.data_end)) != -1:
@@ -78,6 +78,14 @@ def _stacks(obj: PropertyObject, data: bytes, strings: list[str]) -> list[Proper
             out.append(o)
         i = o.data_end if o is not None else j + 1
     return out
+
+
+def treasure_sets(e: Entity) -> list[str]:
+    inv = e.props.get("gCInventory_PS")
+    if inv is None:
+        return []
+    return [inv.props[f"TreasureSet{i}"].value for i in range(1, 6)
+            if f"TreasureSet{i}" in inv.props and inv.props[f"TreasureSet{i}"].value]
 
 
 def _value(e: Entity, cls: str, prop: str, default=None):
@@ -117,7 +125,7 @@ class _Resolver:
         inv = item.entity.props.get("gCInventory_PS")
         if inv is None:
             return out
-        for st in _stacks(inv, item.data, item.strings):
+        for st in stacks(inv, item.data, item.strings):
             code = self.code(st.props["Template"].value if "Template" in st.props else None)
             if code:
                 out.append((code, st.props["Amount"].value if "Amount" in st.props else 1))
@@ -167,7 +175,7 @@ def extract_world(fs: G3Fs, cfg: GameConfig, world: str, templates: dict[str, Te
             locked = _value(e, "gCLock_PS", "Status") == 0
             key = res.code(_value(e, "gCLock_PS", "Key")) if locked else None
             wd.containers.append(ContainerRec(len(wd.containers), e.name, _visual(e), e.pos, locked, key, None,
-                                              res.inventory(x)))
+                                              res.inventory(x), treasure_sets(e)))
         elif "gCNPC_PS" in e.props:
             npcs.append(_npc(x, res, by_guid, cfg, strings))
 
@@ -205,6 +213,7 @@ def _npc(x: _Loaded, res: _Resolver, by_guid: dict[str, Entity], cfg: GameConfig
         inventory=inventory,
         routines=_routines(e, by_guid, cfg),
         is_human=_value(e, "gCNPC_PS", "Species") in HUMAN_SPECIES,
+        treasure_sets=treasure_sets(e),
     )
 
 

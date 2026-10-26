@@ -64,6 +64,7 @@ def write_outputs(out_dir: Path, cfg: GameConfig, world_name: str, wd: WorldData
             "id": f"container-{c.vob_id}", "name": c.name, "visual": c.visual, "locked": c.locked, "key": c.key,
             "pick_string": c.pick_string, "source": "zen",
             "contents": [{**b.item_info(code), "amount": n} for code, n in c.contents],
+            **({"treasure_sets": c.treasure_sets} if c.treasure_sets else {}),
         })
         for c in wd.containers
     ]
@@ -81,6 +82,7 @@ def write_outputs(out_dir: Path, cfg: GameConfig, world_name: str, wd: WorldData
             "is_human": n.is_human, "inserts_in_game": n.inserts_in_game, "source": "script",
             "inventory": [{**b.item_info(i.code), "amount": i.amount, "certainty": i.certainty} for i in n.inventory],
             "routines": [{key: v for key, v in asdict(r).items() if key != "pos"} for r in n.routines],
+            **({"treasure_sets": n.treasure_sets} if n.treasure_sets else {}),
         }))
         for r in n.routines:
             if r.pos is None:
