@@ -41,10 +41,12 @@ def _set_meta(pkg: Path, **fields) -> None:
 
 
 def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, extract: bool) -> dict[str, Path]:
-    """Gothic 3: extraction by gothic_extract.g3, quests from .quest/.info (one world), no movement speeds."""
+    """Gothic 3: extraction by gothic_extract.g3, quests from .quest/.info (one world), movement speeds from the
+    hero's movement parameters."""
     from .g3.__main__ import main as extract_g3
     from .g3.archive import open_g3fs
     from .g3.loot_package import add_loot
+    from .g3.movement import PARAMETERS, movement_speeds as g3_speeds
     from .g3.catalog import build_g3_catalog
     from .g3.npc_codes import alignment_names_pl
     from .g3.quests import extract_g3_quests
@@ -61,7 +63,9 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
     fs = open_g3fs(cfg)
     strings = load_strings(fs)
     names = alignment_names_pl(strings)
-    catalog = build_g3_catalog(load_templates(fs), strings)
+    templates = load_templates(fs)
+    catalog = build_g3_catalog(templates, strings)
+    speeds = g3_speeds(templates)
     pkgs = {}
     for zen in zens:
         pkgs[zen] = dist_root / cfg.key / cfg.worlds[zen].slug
@@ -75,7 +79,8 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
         quests = extract_g3_quests(fs, strings, catalog, npc_codes)
         r = build_quests(cfg.key, pkgs[zen], out_root, quests=quests, worlds={}, single_world=True)
         print(summarize(r["world"], r["quests"]), flush=True)
-        _set_meta(pkgs[zen], movement_speeds_m_s=None, movement_speeds_animations=[])
+        _set_meta(pkgs[zen], movement_speeds_m_s=speeds, movement_speeds_animations=[],
+                  movement_speeds_parameters={"source": "PC_Hero gCCharacterMovement_PS", "properties": PARAMETERS})
     return pkgs
 
 
