@@ -33,10 +33,44 @@ def _selected(cfg, only: list[str] | None) -> list[str]:
     return [w.upper() for w in only]
 
 
+def _set_meta(pkg: Path, **fields) -> None:
+    path = pkg / "metadata.json"
+    meta = json.loads(path.read_text("utf-8"))
+    meta.update(fields)
+    path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, extract: bool) -> dict[str, Path]:
+    """Gothic 3: extraction by gothic_extract.g3, no quests yet (empty quests.json), no movement speeds."""
+    from .g3.__main__ import main as extract_g3
+    from .g3.archive import open_g3fs
+    from .g3.npc_codes import alignment_names_pl
+    from .g3.strings import load_strings
+
+    if extract:
+        for zen in zens:
+            print(f"== {cfg.key}/{zen}: extraction", flush=True)
+            extract_g3(["--game", cfg.key, "--world", zen, "--out", str(out_root / zen.lower())])
+    missing = [z for z in zens if not (out_root / z.lower() / "npcs.geojson").exists()]
+    if missing:
+        raise SystemExit(f"no extraction in {out_root} for: {', '.join(missing)} (run with --extract)")
+    names = alignment_names_pl(load_strings(open_g3fs(cfg)))
+    pkgs = {}
+    for zen in zens:
+        pkgs[zen] = dist_root / cfg.key / cfg.worlds[zen].slug
+        print(f"== {cfg.key}/{zen} -> {pkgs[zen]}", flush=True)
+        build_geoportal(out_root / zen.lower(), pkgs[zen], names)
+        build_quests(cfg.key, pkgs[zen], out_root, quests=[], worlds={})
+        _set_meta(pkgs[zen], movement_speeds_m_s=None, movement_speeds_animations=[])
+    return pkgs
+
+
 def build_game(game: str, out_root: Path, dist_root: Path, only: list[str] | None = None, extract: bool = False,
                extract_args: list[str] = ()) -> dict[str, Path]:
     cfg = load_game(game)
     zens = _selected(cfg, only)
+    if cfg.engine == "genome":
+        return build_genome_game(cfg, zens, out_root, dist_root, extract)
     if extract:
         for zen in zens:
             print(f"== {game}/{zen}: extraction", flush=True)
@@ -62,11 +96,7 @@ def build_game(game: str, out_root: Path, dist_root: Path, only: list[str] | Non
     speeds = movement_speeds(open_vfs(cfg))
     print(f"  movement_speeds_m_s: {speeds}")
     for pkg in pkgs.values():
-        path = pkg / "metadata.json"
-        meta = json.loads(path.read_text("utf-8"))
-        meta["movement_speeds_m_s"] = speeds
-        meta["movement_speeds_animations"] = ANIMATIONS
-        path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        _set_meta(pkg, movement_speeds_m_s=speeds, movement_speeds_animations=ANIMATIONS)
     return pkgs
 
 

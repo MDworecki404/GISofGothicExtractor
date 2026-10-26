@@ -7,7 +7,8 @@ w repozytorium ekstraktora):
 ```
 python -m gothic_extract.package --game g1              # z istniejącej ekstrakcji output/g1/<zen>
 python -m gothic_extract.package --game g2nk --extract  # najpierw pełna ekstrakcja każdego świata
-python -m gothic_extract.validate                       # sama walidacja paczek g1 i g2nk w dist/
+python -m gothic_extract.package --game g3 --extract    # Gothic 3 (osobny czytnik silnika Genome)
+python -m gothic_extract.validate                       # sama walidacja paczek wszystkich gier w dist/
 ```
 
 `package` robi dla każdego świata: warstwy i indeks (`gothic_extract.geoportal`), questy
@@ -27,7 +28,8 @@ i `quests_package` uruchamiane osobno zostawiają paczkę niedokończoną (`geop
 
 | Pole | Znaczenie |
 |---|---|
-| `game` | `g2nk` albo `g1` |
+| `game` | `g2nk`, `g1` albo `g3` |
+| `engine` | tylko w `g3`: `genome` (silnik Gothic 3) |
 | `world` | nazwa pliku ZEN świata bez rozszerzenia (`NEWWORLD`, `WORLD`…) |
 | `anchor`, `axes`, `gltf_axes` | kotwica WGS84 `{lon, lat, h}` i osie świata (opis wyżej) |
 | `package.version` | 4 |
@@ -183,6 +185,7 @@ Khorinis: warstwy i indeks ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Światy
 | `dist/g1/stara-kopalnia` | `OLDMINE` | Stara Kopalnia (nazwa robocza); `chapter = null`. |
 | `dist/g1/cmentarzysko-orkow` | `ORCGRAVEYARD` | Cmentarzysko orków (nazwa z dziennika gry, temat `CH3_ORCGRAVEYARD`); `chapter = null`. |
 | `dist/g1/swiatynia-orkow` | `ORCTEMPEL` | Świątynia orków (nazwa robocza); `chapter = null`. |
+| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Wersja bez modeli 3D i bez zadań (patrz „Różnice Gothic 3”). |
 
 Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy ogląda się osobno.
 
@@ -195,3 +198,26 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
 - **Skrypty**: punkty startowe to `STARTUP_<ZEN>`; obozy Kolonii to podfunkcje `STARTUP_SUB_*` wołane z `STARTUP_WORLD`. Zadania nie mają zmiennych `MIS_*`, tylko jawne statusy (`LOG_RUNNING`, `LOG_SUCCESS`).
 - **Siatka świata**: ZenKit ustawia w G1 flagę LOD na prawie każdym wielokącie, więc nie służy ona do odrzucania geometrii (w g2nk wielokąty LOD są pomijane). Kilka materiałów nie ma tekstury i ma kolor materiału.
 - **Animacje**: prędkości ruchu liczone z tych samych animacji HUMANS co w G2 (`HUMANS-S_WALKL`, `RUNL`, `SNEAKL`, `HUMANS_1HST1-S_1HWALKL`).
+
+## Różnice Gothic 3 względem Gothic 1 i 2
+
+- `metadata.json → game` = `g3`, `engine` = `genome`, `world` = `G3_WORLD_01`. Gothic 3 ma jeden ciągły świat,
+  więc jest jedna paczka (`dist/g3/myrtana`). Nazwa „Myrtana” jest robocza.
+- **Kody** przedmiotów i postaci mają oryginalną wielkość liter z gry (`It_Plant_Perm_01`, `Inog`), nie same wielkie
+  litery jak w G1/G2. Polska nazwa pochodzi z tekstu gry `FO_<kod>`.
+- **Rozdziały**: G3 ich nie ma, `chapter` jest zawsze `null`.
+- **Gildie**: G3 nie ma gildii. `guild_name` to stronnictwo postaci (`gEPoliticalAlignment`): `ORC` (Orkowie),
+  `NRD` (Barbarzyńcy), `REB` (Buntownicy), `MID` (Druid), `ASS` (Asasyn), `NOM` (Koczownicy) — polskie nazwy z ekranu
+  reputacji gry w `guild_names` — oraz `OUT`, `SLAVE` i `NONE` bez tekstu w grze (`null`). Zwierzęta i potwory mają `NONE`.
+- **Przedmioty** (`items.geojson`, `source: "zen"`) to przedmioty leżące w świecie od początku gry (w G3 w większości
+  rośliny). `spot` jest zawsze `null`.
+- **Skrzynie**: `pick_string` jest zawsze `null` (G3 nie ma kombinacji zamków; zamek ma trudność, klucz w `key`).
+  `contents` to tylko stałe przedmioty. **Większość skrzyń ma w G3 losowany łup** (zestawy łupu), którego ta wersja
+  jeszcze nie rozwija, więc `contents` jest zwykle puste.
+- **NPC**: `insert_waypoint` to nazwa sektora świata, w którym postać stoi; `insert_function` jest puste. `inventory`
+  to stały ekwipunek (w G3 rzadki; resztę dają zestawy łupu). `level` to wartość z danych postaci.
+- **Rutyny**: G3 zapisuje tylko punkty pracy, odpoczynku i snu (`action`: `WORK`/`RELAX`/`SLEEP`). Godziny są w kodzie
+  gry, więc w `times` są **robocze** (praca 08:00–18:00, odpoczynek 18:00–22:00, sen 22:00–08:00, `games.toml`).
+  `waypoint` to nazwa obiektu punktu w świecie.
+- **Brakuje jeszcze**: `world.glb`, `vobs.glb` i `models/` (modele 3D), zadań (`quests.json` z pustą listą) oraz
+  prędkości ruchu (`movement_speeds_m_s = null`). Przyjdą w kolejnych etapach.
