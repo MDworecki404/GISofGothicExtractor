@@ -3,8 +3,11 @@
 Layout: docs/formats/g3-entity.md. Entities are stored flat; the hierarchy is a list of (parent, child)
 index pairs after them, ended by (0xFFFFFFFF, 0xFFFFFFFF).
 """
+import struct
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+
+import numpy as np
 
 from .genome import FormatError, GenomeFile, PropertyObject, Reader, parse_genomfle, read_property_object
 
@@ -23,6 +26,18 @@ class Entity:
     pos: Vec3
     props: dict[str, PropertyObject] = field(default_factory=dict)
     children: list["Entity"] = field(default_factory=list)
+    box: tuple[Vec3, Vec3] | None = None  # world bounding box (min, max) the game stores for the entity
+
+
+def to_world(m: list[float], points: np.ndarray) -> np.ndarray:
+    """Entity-local points (n, 3) -> world, with the entity's world matrix (row vectors: p @ R + t)."""
+    mat = np.asarray(m, dtype=np.float64).reshape(4, 4)
+    return np.asarray(points, dtype=np.float64) @ mat[:3, :3] + mat[3, :3]
+
+
+def _box(r: Reader) -> tuple[Vec3, Vec3] | None:
+    lo, hi = r.vec3(), r.vec3()
+    return (lo, hi) if all(a <= b for a, b in zip(lo, hi)) else None
 
 
 def translation(m: list[float]) -> Vec3:
@@ -73,9 +88,45 @@ def _world_entity(r: Reader, strings: list[str]) -> Entity:
     r.expect(0, 2, f"entity at {at}")
     name = strings[r.u16()]
     world, local = r.floats(16), r.floats(16)
-    r.take(3 * 24 + 2 * 16 + 19)
+    box = _box(r)
+    r.take(2 * 24 + 2 * 16 + 19)
     props = _property_sets(r, strings, sized=False, where=f"{name} at {at}")
-    return Entity(name, guid, creator, world, local, translation(world), props)
+    return Entity(name, guid, creator, world, local, translation(world), props, box=box)
+
+
+NODE_RECORD = 89  # spatial tree record before every entity of a .node file (not needed here)
+
+
+def _static_entity(r: Reader, strings: list[str]) -> Entity:
+    """Entity of a .node file (static geometry): the spatial part of a world entity, without the creator."""
+    at = r.pos
+    r.expect(0x53, 2, f"static entity at {at}")
+    r.expect(1, 2, f"static entity at {at}")
+    guid = _property_id(r)
+    r.take(7 + 4 + 4 + 2)
+    name = strings[r.u16()]
+    world, local = r.floats(16), r.floats(16)
+    box = _box(r)
+    r.take(2 * 24 + 2 * 16 + 19)
+    props = _property_sets(r, strings, sized=False, where=f"{name} at {at}")
+    return Entity(name, guid, None, world, local, translation(world), props, box=box)
+
+
+def read_node_file(data: bytes) -> list[Entity]:
+    """Top-level entities of a .node file (static meshes, SpeedTrees, lights of a sector or world cell):
+    u16 0x53, u32 n, n × (89-byte spatial record, entity), then the hierarchy pairs."""
+    gf = parse_genomfle(data)
+    r = Reader(data, gf.body)
+    r.expect(0x53, 2, "node file version")
+    flat = []
+    for _ in range(r.u32()):
+        r.take(NODE_RECORD)
+        flat.append(_static_entity(r, gf.strings))
+    roots = _hierarchy(r, flat)
+    end = struct.unpack_from("<I", data, 10)[0]
+    if r.pos != end:
+        raise FormatError(f"node file ends at {end}, read to {r.pos}")
+    return roots
 
 
 def _template_entity(r: Reader, strings: list[str]) -> Entity:

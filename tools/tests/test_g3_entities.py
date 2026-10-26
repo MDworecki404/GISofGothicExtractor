@@ -70,3 +70,37 @@ def test_every_sector_file_parses(g3_fs):
             continue
         read_entity_file(data)
     assert sorted(legacy) == ["G3_Myrtana_01_Faring_VFX", "G3_Varant_01_MoraSul_Temple_Lights_01"]
+
+
+NODE = "G3_World_01/SysDyn_{9A103CC2-4190-4DB3-9618-0419E5445AAD}/G3_World_01_x55000y0z55000_CStat.node"
+
+
+def test_node_file_reads_to_the_end(g3_fs):
+    from gothic_extract.g3.entities import read_node_file
+
+    ents = list(walk(read_node_file(g3_fs.find(NODE))))
+    assert len(ents) == 1524
+    meshes = [e for e in ents if "eCVisualMeshStatic_PS" in e.props]
+    assert any(e.props["eCVisualMeshStatic_PS"].props["ResourceFilePath"].value == "G3_Object_Pelt_01.xcmsh"
+               for e in meshes)
+
+
+def test_world_matrix_places_mesh_inside_entity_box(g3_fs):
+    import numpy as np
+
+    from gothic_extract.g3.entities import read_node_file, to_world
+    from gothic_extract.g3.mesh import load_mesh
+
+    checked = 0
+    for e in walk(read_node_file(g3_fs.find(NODE))):
+        vis = e.props.get("eCVisualMeshStatic_PS")
+        els = load_mesh(g3_fs, vis.props["ResourceFilePath"].value) if vis else None
+        if not els or e.box is None:
+            continue
+        pts = to_world(e.world, np.vstack([el.positions for el in els]))
+        lo, hi = np.array(e.box[0]), np.array(e.box[1])
+        assert (pts.min(axis=0) >= lo - 5).all() and (pts.max(axis=0) <= hi + 5).all(), e.name
+        checked += 1
+        if checked == 300:
+            break
+    assert checked == 300
