@@ -41,12 +41,15 @@ def _set_meta(pkg: Path, **fields) -> None:
 
 
 def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, extract: bool) -> dict[str, Path]:
-    """Gothic 3: extraction by gothic_extract.g3, no quests yet (empty quests.json), no movement speeds."""
+    """Gothic 3: extraction by gothic_extract.g3, quests from .quest/.info (one world), no movement speeds."""
     from .g3.__main__ import main as extract_g3
     from .g3.archive import open_g3fs
     from .g3.loot_package import add_loot
+    from .g3.catalog import build_g3_catalog
     from .g3.npc_codes import alignment_names_pl
+    from .g3.quests import extract_g3_quests
     from .g3.strings import load_strings
+    from .g3.templates import load_templates
 
     if extract:
         for zen in zens:
@@ -55,7 +58,10 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
     missing = [z for z in zens if not (out_root / z.lower() / "npcs.geojson").exists()]
     if missing:
         raise SystemExit(f"no extraction in {out_root} for: {', '.join(missing)} (run with --extract)")
-    names = alignment_names_pl(load_strings(open_g3fs(cfg)))
+    fs = open_g3fs(cfg)
+    strings = load_strings(fs)
+    names = alignment_names_pl(strings)
+    catalog = build_g3_catalog(load_templates(fs), strings)
     pkgs = {}
     for zen in zens:
         pkgs[zen] = dist_root / cfg.key / cfg.worlds[zen].slug
@@ -64,7 +70,11 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
         loot = add_loot(out_root / zen.lower(), pkgs[zen])
         print(f"  random loot: {loot['sets']} sets, {loot['holders']} holders, "
               f"{loot['possible_places']} possible places", flush=True)
-        build_quests(cfg.key, pkgs[zen], out_root, quests=[], worlds={})
+        npc_codes = {f["properties"]["code"] for f in
+                     json.loads((out_root / zen.lower() / "npcs.geojson").read_text("utf-8"))["features"]}
+        quests = extract_g3_quests(fs, strings, catalog, npc_codes)
+        r = build_quests(cfg.key, pkgs[zen], out_root, quests=quests, worlds={}, single_world=True)
+        print(summarize(r["world"], r["quests"]), flush=True)
         _set_meta(pkgs[zen], movement_speeds_m_s=None, movement_speeds_animations=[])
     return pkgs
 

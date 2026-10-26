@@ -135,3 +135,10 @@ def g3_treasure(g3_fs, g3_templates):
     from gothic_extract.g3.treasure import load_treasure_sets
 
     return load_treasure_sets(g3_fs, g3_templates)
+
+
+@pytest.fixture(scope="session")
+def g3_quests(g3_fs, g3_strings, g3_catalog, g3_world):
+    from gothic_extract.g3.quests import extract_g3_quests
+
+    return extract_g3_quests(g3_fs, g3_strings, g3_catalog, {n.code for n in g3_world[1]})

@@ -17,7 +17,13 @@ def test_g3_package_validates(tmp_path, g3_out):
     meta = json.loads((pkg / "metadata.json").read_text("utf-8"))
     assert meta["package"]["version"] == 4 and meta["movement_speeds_m_s"] is None
     assert meta["guild_names"]["REB"] == "Buntownicy"
-    assert json.loads((pkg / "quests.json").read_text("utf-8"))["quests"] == []
+    quests = json.loads((pkg / "quests.json").read_text("utf-8"))["quests"]
+    assert len(quests) == 641  # one world: every quest of the game is in this package
+    abe = next(q for q in quests if q["code"] == "Abe_BringBread")
+    assert any(p["role"] == "giver" and p["npc_code"] == "Abe" for p in abe["places"])
+    arakos = next(q for q in quests if q["code"] == "Arakos_KillOrcs")
+    assert any(p["role"] == "target" for p in arakos["places"])
+    assert meta["package"]["counts"]["quests"] == 641
 
 
 def test_g3_loot_in_package(tmp_path, g3_out):

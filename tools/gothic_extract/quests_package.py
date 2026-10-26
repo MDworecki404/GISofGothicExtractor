@@ -19,7 +19,7 @@ from .script_vm import make_vm
 SECTION_LABEL = {"mission": "Misja", "note": "Notatka"}
 PACKAGE_VERSION = 4
 MAX_SPAWNS = 10  # spawn places listed for a non-unique character (guards, bandits...)
-_TARGET_ROLES = {"insert", "routine"}
+_TARGET_ROLES = {"insert", "routine", "target"}  # target: G3 quest targets (.quest DeliveryEntities)
 
 
 def _read(path: Path):
@@ -115,10 +115,12 @@ def link_characters_items(q: dict, idx: PackageIndex) -> tuple[list[dict], list[
     return chars, items
 
 
-def build_world_quests(quests: list[dict], world: str, worlds, idx: PackageIndex) -> list[dict]:
+def build_world_quests(quests: list[dict], world: str, worlds, idx: PackageIndex,
+                       single_world: bool = False) -> list[dict]:
+    """single_world: the game has one world (G3), so every quest belongs to it."""
     out = []
     for q in quests:
-        ws = quest_worlds(q, worlds)
+        ws = [world] if single_world else quest_worlds(q, worlds)
         if world not in ws:
             continue
         chars, items = link_characters_items(q, idx)
@@ -144,15 +146,15 @@ def summarize(world: str, qs: list[dict]) -> str:
 
 
 def build(game: str, pkg: Path, out_root: Path, quests: list[dict] | None = None,
-          worlds: dict[str, dict[str, set[str]]] | None = None) -> dict:
+          worlds: dict[str, dict[str, set[str]]] | None = None, single_world: bool = False) -> dict:
     """quests / worlds: already extracted quests and load_worlds(out_root), to share them between packages."""
     meta = _read(pkg / "metadata.json")
     world = meta["world"]
     worlds = worlds if worlds is not None else load_worlds(out_root)
     quests = quests if quests is not None else extract_quests(make_vm(load_game(game).script_dat))
-    unassigned = [q for q in quests if not quest_worlds(q, worlds)]
+    unassigned = [] if single_world else [q for q in quests if not quest_worlds(q, worlds)]
     idx = PackageIndex(pkg)
-    mine = build_world_quests(quests, world, worlds, idx)
+    mine = build_world_quests(quests, world, worlds, idx, single_world)
     _write(pkg / "quests.json", {"version": 1, "game": game, "world": world, "quests": mine})
     _write(pkg / "search_index.json", {"version": idx.version, "entries": idx.entries + [search_entry(q) for q in mine]})
     package = meta["package"]

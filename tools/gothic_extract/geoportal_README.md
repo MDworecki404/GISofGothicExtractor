@@ -161,7 +161,7 @@ Wpis `type: "quest"` w `search_index.json` jest skrócony (`id`, `code`, `name`,
 | `giver`, `giver_certainty`, `giver_candidates` | zleceniodawca (`{code, name}`) albo lista kandydatów |
 | `order` | `"script"`: etapy w kolejności występowania w skryptach, nie w kolejności gry |
 | `stages` | etapy: `kind` (`create`/`entry`/`status`/`close`), `text`, `status`, `function`, `sources` (dialog / użycie przedmiotu), `conditional` |
-| `characters`, `items` | postacie i przedmioty zadania z `role` i `certainty`; `in_index: true` ⇒ `id` wskazuje wpis w `search_index.json`, inaczej `id: null` |
+| `characters`, `items` | postacie i przedmioty zadania z `role` (w G3 także `target`) i `certainty`; `in_index: true` ⇒ `id` wskazuje wpis w `search_index.json`, inaczej `id: null` |
 | `rewards` | `xp` i `xp_certainty` |
 | `worlds` | wszystkie światy gry (nazwy ZEN), w których zadanie ma udział; zadanie wielo-światowe jest w paczce **każdego** z nich pod tym samym `id`, a `places` zawiera tylko miejsca z danego świata |
 | `places` | miejsca na mapie: jak w indeksie (`kind`, `lon`, `lat`, `h`, `ref`…) plus `role` (`giver`/`target`/`stage`), `npc_code`, `certainty` |
@@ -185,7 +185,7 @@ Khorinis: warstwy i indeks ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Światy
 | `dist/g1/stara-kopalnia` | `OLDMINE` | Stara Kopalnia (nazwa robocza); `chapter = null`. |
 | `dist/g1/cmentarzysko-orkow` | `ORCGRAVEYARD` | Cmentarzysko orków (nazwa z dziennika gry, temat `CH3_ORCGRAVEYARD`); `chapter = null`. |
 | `dist/g1/swiatynia-orkow` | `ORCTEMPEL` | Świątynia orków (nazwa robocza); `chapter = null`. |
-| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Wersja bez modeli 3D i bez zadań (patrz „Różnice Gothic 3”). |
+| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Wersja bez modeli 3D (patrz „Różnice Gothic 3”). |
 
 Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy ogląda się osobno.
 
@@ -224,8 +224,15 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
 - **Rutyny**: G3 zapisuje tylko punkty pracy, odpoczynku i snu (`action`: `WORK`/`RELAX`/`SLEEP`). Godziny są w kodzie
   gry, więc w `times` są **robocze** (praca 08:00–18:00, odpoczynek 18:00–22:00, sen 22:00–08:00, `games.toml`).
   `waypoint` to nazwa obiektu punktu w świecie.
-- **Brakuje jeszcze**: `world.glb`, `vobs.glb` i `models/` (modele 3D), zadań (`quests.json` z pustą listą) oraz
-  prędkości ruchu (`movement_speeds_m_s = null`). Przyjdą w kolejnych etapach.
+- **Zadania** (`quests.json`): wszystkie 641 zadań gry (jeden świat, więc każde jest w tej paczce, `worlds` =
+  `["G3_WORLD_01"]`). `name` = tytuł z dziennika, `section` = `mission`, `chapter` = `null`. Zleceniodawca to postać,
+  której dialog rozpoczyna zadanie; gdy takich dialogów jest kilka u różnych postaci — `giver_candidates`.
+  `stages` to dialogi zadania (`kind: "entry"`, `text` = pierwsza kwestia dialogu, `sources` = dialog i postać),
+  w kolejności z danych gry (`order: "script"`), bez statusów. `characters`: `giver`/`giver_candidate`, `stage`
+  (inne postacie z dialogami zadania) i **`target`** (cel zadania: kogo zabić, pokonać, przyprowadzić, komu
+  zanieść). `items`: `handover` (co oddać) i `reward` (co dostaje gracz). `rewards.xp` = doświadczenie za zadanie.
+- **Brakuje jeszcze**: `world.glb`, `vobs.glb` i `models/` (modele 3D) oraz prędkości ruchu
+  (`movement_speeds_m_s = null`). Przyjdą w kolejnych etapach.
 
 ### Losowy łup (tylko G3)
 
