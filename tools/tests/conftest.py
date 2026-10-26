@@ -71,3 +71,18 @@ def script_items(g2_vm, resolver, other_world_fns):
     from gothic_extract.npcs import extract_script_items
 
     return extract_script_items(g2_vm, resolver, other_world_fns)
+
+
+@pytest.fixture(scope="session")
+def g3_cfg():
+    cfg = load_game("g3")
+    if not cfg.root.exists():
+        pytest.skip("Gothic 3 folder not present")
+    return cfg
+
+
+@pytest.fixture(scope="session")
+def g3_fs(g3_cfg):
+    from gothic_extract.g3.archive import open_g3fs
+
+    return open_g3fs(g3_cfg)

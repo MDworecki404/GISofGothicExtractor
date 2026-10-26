@@ -20,9 +20,9 @@ class WorldEntry:
 class GameConfig:
     key: str
     root: Path
-    version: zenkit.GameVersion
+    version: zenkit.GameVersion | None  # None for the Genome engine (G3)
     vdf_files: list[str]
-    script_dat: Path
+    script_dat: Path | None
     anchor_lon: float
     anchor_lat: float
     anchor_h: float
@@ -32,6 +32,10 @@ class GameConfig:
     skip_lod_polygons: bool = True  # False where ZenKit reports the LOD flag on nearly every polygon (G1)
     chapter_dispatcher: str | None = None  # function that branches on the new chapter (G1: B_KAPITELWECHSEL)
     worlds: dict[str, "WorldEntry"] = field(default_factory=dict)  # ZEN name (upper case) -> package slug and Polish name
+    engine: str = "zengin"  # "zengin" (G1, G2) or "genome" (G3)
+    pak_files: list[str] = field(default_factory=list)  # G3: .pak/.pNN archives relative to root
+    sector_exclude: list[str] = field(default_factory=list)  # G3: fnmatch patterns of sectors left out
+    routine_slots: dict[str, list[str]] = field(default_factory=dict)  # G3: routine point kind -> "HH:MM–HH:MM" slots
 
 
 def _list_vdfs(root: Path, pattern: str, exclude: list[str]) -> list[str]:
@@ -48,12 +52,13 @@ def load_game(key: str) -> GameConfig:
         entry = tomllib.load(f)[key]
     root = PROJECT_ROOT / entry["root"]
     anchor = entry.get("anchor", {})
+    engine = entry.get("engine", "zengin")
     return GameConfig(
         key=key,
         root=root,
-        version=zenkit.GameVersion[entry["version"]],
-        vdf_files=_list_vdfs(root, entry["vdf_glob"], entry.get("vdf_exclude", [])) if root.exists() else [],
-        script_dat=root / entry["script_dat"],
+        version=zenkit.GameVersion[entry["version"]] if "version" in entry else None,
+        vdf_files=_list_vdfs(root, entry["vdf_glob"], entry.get("vdf_exclude", [])) if "vdf_glob" in entry and root.exists() else [],
+        script_dat=root / entry["script_dat"] if "script_dat" in entry else None,
         anchor_lon=float(anchor.get("lon", 0.0)),
         anchor_lat=float(anchor.get("lat", 0.0)),
         anchor_h=float(anchor.get("h", 0.0)),
@@ -64,6 +69,10 @@ def load_game(key: str) -> GameConfig:
         chapter_dispatcher=entry.get("chapter_dispatcher"),
         worlds={k.upper(): WorldEntry(v["slug"], v["name_pl"], v.get("provisional_name", False))
                 for k, v in entry.get("worlds", {}).items()},
+        engine=engine,
+        pak_files=_list_vdfs(root, entry["pak_glob"], entry.get("pak_exclude", [])) if "pak_glob" in entry and root.exists() else [],
+        sector_exclude=entry.get("sector_exclude", []),
+        routine_slots=entry.get("routine_slots", {}),
     )
 
 

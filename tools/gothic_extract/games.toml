@@ -86,3 +86,26 @@ provisional_name = true
 slug = "swiatynia-orkow"
 name_pl = "Świątynia orków"
 provisional_name = true
+
+[g3]
+engine = "genome"
+root = "Gothic 3"
+# All archives and their patches (X.pak < X.p00 < X.p01); audio is not needed.
+pak_glob = "Data/*.p*"
+pak_exclude = ["Speech_*", "Music*", "Sound*"]
+anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
+# Developer test sectors; some are enabled (=true) in G3_World_01.wrldatasc but are not part of the game.
+sector_exclude = ["*Test*", "BjoernTest_*", "Hoshi_*", "Mario_*", "Mattes_*"]
+
+# G3 stores only the points (work / relax / sleep); the hours live in the game code.
+# Working values, to be confirmed in the game. Separator is the en dash "–" (geoportal.DASH).
+[g3.routine_slots]
+work = ["08:00–18:00"]
+relax = ["18:00–22:00"]
+sleep = ["22:00–08:00"]
+
+# The whole continent (Myrtana, Nordmar, Varant) is one world file. Working name.
+[g3.worlds.G3_WORLD_01]
+slug = "myrtana"
+name_pl = "Myrtana"
+provisional_name = true
