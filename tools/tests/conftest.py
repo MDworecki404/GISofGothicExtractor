@@ -8,6 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from gothic_extract.config import load_game  # noqa: E402
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "slow: reads every file of a game (run with -m \"not slow\" to skip)")
+
+
 @pytest.fixture(scope="session")
 def g2_cfg():
     cfg = load_game("g2nk")
