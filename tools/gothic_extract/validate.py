@@ -154,6 +154,13 @@ def validate_package(pkg: Path, game: str) -> PackageReport:
         r.errors.append(f"search_index: {n} miejsc kind={kind} ze ref spoza {layer}.geojson")
     _check_quests(qlist, meta, entries, set(entry_ids), ids, r)
 
+    loot_sets = {l["set"] for e in entries for l in e.get("loot", [])}
+    if loot_sets:  # G3: random loot must point at sets described in treasure_sets.json
+        sets = _load(pkg, "treasure_sets.json", r)
+        unknown = sorted(loot_sets - set((sets or {}).get("sets", {})))
+        if unknown:
+            r.errors.append(f"search_index: zestawy łupu spoza treasure_sets.json: {unknown[:5]}")
+
     refs = {e["model"] for e in entries if e.get("model")}
     refs |= {f["properties"]["model"] for n in ("items", "containers") for f in feats[n] if f["properties"].get("model")}
     missing = sorted(m for m in refs if not (pkg / "models" / m).is_file())

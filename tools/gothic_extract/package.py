@@ -44,6 +44,7 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
     """Gothic 3: extraction by gothic_extract.g3, no quests yet (empty quests.json), no movement speeds."""
     from .g3.__main__ import main as extract_g3
     from .g3.archive import open_g3fs
+    from .g3.loot_package import add_loot
     from .g3.npc_codes import alignment_names_pl
     from .g3.strings import load_strings
 
@@ -60,6 +61,9 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
         pkgs[zen] = dist_root / cfg.key / cfg.worlds[zen].slug
         print(f"== {cfg.key}/{zen} -> {pkgs[zen]}", flush=True)
         build_geoportal(out_root / zen.lower(), pkgs[zen], names)
+        loot = add_loot(out_root / zen.lower(), pkgs[zen])
+        print(f"  random loot: {loot['sets']} sets, {loot['holders']} holders, "
+              f"{loot['possible_places']} possible places", flush=True)
         build_quests(cfg.key, pkgs[zen], out_root, quests=[], worlds={})
         _set_meta(pkgs[zen], movement_speeds_m_s=None, movement_speeds_animations=[])
     return pkgs

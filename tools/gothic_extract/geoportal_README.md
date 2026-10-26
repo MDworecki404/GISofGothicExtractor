@@ -212,8 +212,8 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
 - **Przedmioty** (`items.geojson`, `source: "zen"`) to przedmioty leżące w świecie od początku gry (w G3 w większości
   rośliny). `spot` jest zawsze `null`.
 - **Skrzynie**: `pick_string` jest zawsze `null` (G3 nie ma kombinacji zamków; zamek ma trudność, klucz w `key`).
-  `contents` to tylko stałe przedmioty. **Większość skrzyń ma w G3 losowany łup** (zestawy łupu), którego ta wersja
-  jeszcze nie rozwija, więc `contents` jest zwykle puste.
+  `contents` to tylko stałe przedmioty (w G3 rzadkie). **Większość zawartości skrzyń i postaci G3 jest losowana**
+  z zestawów łupu — patrz „Losowy łup (tylko G3)” niżej.
 - **NPC**: `insert_waypoint` to nazwa sektora świata, w którym postać stoi; `insert_function` jest puste. `inventory`
   to stały ekwipunek (w G3 rzadki; resztę dają zestawy łupu). `level` to wartość z danych postaci.
 - **Rutyny**: G3 zapisuje tylko punkty pracy, odpoczynku i snu (`action`: `WORK`/`RELAX`/`SLEEP`). Godziny są w kodzie
@@ -221,3 +221,24 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
   `waypoint` to nazwa obiektu punktu w świecie.
 - **Brakuje jeszcze**: `world.glb`, `vobs.glb` i `models/` (modele 3D), zadań (`quests.json` z pustą listą) oraz
   prędkości ruchu (`movement_speeds_m_s = null`). Przyjdą w kolejnych etapach.
+
+### Losowy łup (tylko G3)
+
+Gra losuje zawartość skrzyń, ekwipunek postaci, trofea potworów i towar handlarzy z **zestawów łupu**.
+Wszystkie pola poniżej są opcjonalne (w G1/G2 ich nie ma).
+
+- **`treasure_sets.json`** (`{version, sets: {kod: {...}}}`) — zestawy użyte w świecie: `kind` (`chest` — skrzynia,
+  `npc` — postać, `monster` — potwór, `trader` — handlarz, `mining` — wydobycie), `min_stacks`/`max_stacks` (ile
+  pozycji gra losuje z listy; `0`/`0` w zestawach unikatowych skrzyń: jeden przedmiot, który wypada w grze raz),
+  `distribution` (surowa wartość z gry), `holders` (ile skrzyń i postaci ma ten zestaw) i `items`
+  (`{code, name, category, amount}` — wszystkie możliwe pozycje).
+- **`treasure_sets`** — lista kodów zestawów w `containers.geojson`, `npcs.geojson` i `characters.geojson`
+  (karta skrzyni lub postaci: „może zawierać…” = pozycje tych zestawów z `treasure_sets.json`).
+- **`loot`** we wpisie przedmiotu w `search_index.json` — z jakich zestawów przedmiot może wypaść:
+  `[{set, kind, holders}]`. Przedmiot, który jest **tylko** w łupie, też ma wpis (`total: 0`, `places` mogą być puste).
+- **Miejsca `possible`** — dla zestawów, które ma **co najwyżej 50** skrzyń lub postaci (skrzynie unikatowe,
+  handlarze, rzadkie potwory), każda taka skrzynia/postać jest miejscem w `places` z `certainty: "possible"`,
+  `set` (kod zestawu) i `kind` `container` albo `npc` (`ref` jak zwykle). Zestawy powszechne (np. złoto w setkach
+  skrzyń) są tylko w `loot`, żeby nie zalewać mapy; aplikacja może na żądanie pokazać ich skrzynie, filtrując
+  `containers.geojson`/`npcs.geojson` po `treasure_sets`.
+- `total` nadal liczy tylko sztuki pewne, więc łup go nie zmienia.
