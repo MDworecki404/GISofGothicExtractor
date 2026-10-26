@@ -3,9 +3,10 @@
 An element starts with its material (a .xshmat name: u16 string index, or an inline string in files without the
 GENOMFLE header) and u32 n, followed by n vertex streams: u32 type, u16 1, u8 1, u32 count, count × element.
 Stream types and element sizes (checked on the landscape and low-poly meshes, 2026-10-26):
-0 indices (u32, triangle list), 1 positions (3 × f32, world centimetres for terrain), 3 tangents (3 × f32),
+0 indices (u32, triangle list, clockwise front faces), 1 positions (3 × f32, world centimetres for terrain),
+3 normals (3 × f32; checked against the triangles: every face agrees),
 4 and 5 colours (u32), 12 texture coordinates (2 × f32), 15, 18, 21 and 73 further coordinate sets (2 × f32),
-64 normals (3 × f32). Between elements there is per-element data that is not needed here; elements are found
+64 tangents (3 × f32). Between elements there is per-element data that is not needed here; elements are found
 by their header and every stream is checked (version bytes, known type, inside the object).
 """
 import struct
@@ -16,7 +17,7 @@ import numpy as np
 from .genome import FormatError, Reader, parse_genomfle, read_property_object
 
 STREAM_SIZE = {0: 4, 1: 12, 3: 12, 4: 4, 5: 4, 12: 8, 15: 8, 18: 8, 21: 8, 64: 12, 73: 8}
-INDICES, POSITIONS, UVS, NORMALS = 0, 1, 12, 64
+INDICES, POSITIONS, UVS, NORMALS = 0, 1, 12, 3
 _MAX_STREAMS = 32
 
 

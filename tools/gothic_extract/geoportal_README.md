@@ -185,7 +185,7 @@ Khorinis: warstwy i indeks ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Światy
 | `dist/g1/stara-kopalnia` | `OLDMINE` | Stara Kopalnia (nazwa robocza); `chapter = null`. |
 | `dist/g1/cmentarzysko-orkow` | `ORCGRAVEYARD` | Cmentarzysko orków (nazwa z dziennika gry, temat `CH3_ORCGRAVEYARD`); `chapter = null`. |
 | `dist/g1/swiatynia-orkow` | `ORCTEMPEL` | Świątynia orków (nazwa robocza); `chapter = null`. |
-| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Wersja bez modeli 3D (patrz „Różnice Gothic 3”). |
+| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Teren jest, budynków i modeli obiektów jeszcze nie ma (patrz „Różnice Gothic 3”). |
 
 Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy ogląda się osobno.
 
@@ -231,7 +231,10 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
   w kolejności z danych gry (`order: "script"`), bez statusów. `characters`: `giver`/`giver_candidate`, `stage`
   (inne postacie z dialogami zadania) i **`target`** (cel zadania: kogo zabić, pokonać, przyprowadzić, komu
   zanieść). `items`: `handover` (co oddać) i `reward` (co dostaje gracz). `rewards.xp` = doświadczenie za zadanie.
-- **Brakuje jeszcze**: `world.glb`, `vobs.glb` i `models/` (modele 3D) oraz prędkości ruchu
+- **Teren** (`world.glb`): cały kontynent (komórki terenu Myrtany, Nordmaru i Varantu, ~2,4 mln trójkątów, ~150 MB),
+  w tych samych osiach i jednostkach co w G1/G2. Teren w grze miesza kilka tekstur na materiał; w glTF każdy z 89
+  materiałów ma swoją teksturę podstawową, zmniejszoną do 512 px. Budynki i obiekty jeszcze nie są w modelu.
+- **Brakuje jeszcze**: `vobs.glb` i `models/` (budynki, obiekty, modele przedmiotów) oraz prędkości ruchu
   (`movement_speeds_m_s = null`). Przyjdą w kolejnych etapach.
 
 ### Losowy łup (tylko G3)

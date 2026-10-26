@@ -13,6 +13,7 @@ from .archive import open_g3fs
 from .catalog import build_g3_catalog
 from .strings import load_strings
 from .templates import load_templates
+from .terrain import export_terrain_glb, landscape_meshes
 from .treasure import load_treasure_sets
 from .world import WorldStats, extract_world
 
@@ -43,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--world", default="G3_World_01", help="world folder in Projects_compiled")
     ap.add_argument("--game", default="g3", help="key from games.toml")
+    ap.add_argument("--skip-mesh", action="store_true", help="do not export world.glb (terrain)")
+    ap.add_argument("--max-texture", type=int, default=512, help="largest texture side in world.glb (pixels)")
     args = ap.parse_args(argv)
 
     cfg = load_game(args.game)
@@ -58,8 +61,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[3/4] world {args.world}", flush=True)
     stats = WorldStats()
     wd, npcs = extract_world(fs, cfg, args.world, templates, strings, stats)
+    mesh = None
+    if not args.skip_mesh:
+        print("[4/4] terrain -> world.glb", flush=True)
+        mesh = export_terrain_glb(fs, landscape_meshes(fs), args.out / "world.glb", args.max_texture)
+        print(f"  triangles: {mesh.triangles}, materials: {mesh.materials}, "
+              f"missing textures: {len(mesh.textures_missing)}", flush=True)
     print(f"[4/4] writing GeoJSON to {args.out}", flush=True)
-    report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, [], None)
+    report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, [], mesh)
 
     write_treasure_sets(args.out, load_treasure_sets(fs, templates), catalog, wd, npcs)
 

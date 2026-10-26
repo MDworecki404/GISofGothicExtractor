@@ -126,7 +126,7 @@ def g3_out(g3_cfg, tmp_path_factory):
     from gothic_extract.g3.__main__ import main
 
     out = tmp_path_factory.mktemp("g3") / "g3_world_01"
-    assert main(["--out", str(out)]) == 0
+    assert main(["--out", str(out), "--skip-mesh"]) == 0  # terrain: test_g3_terrain
     return out
 
 
