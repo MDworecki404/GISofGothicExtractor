@@ -1,5 +1,5 @@
 from gothic_extract.g3.npc_codes import ALIGNMENT_CODES, alignment_names_pl
-from gothic_extract.g3.world import active_sectors
+from gothic_extract.g3.world import STORY_SECTOR, active_sectors
 
 
 def test_sectors_skip_tests_and_disabled(g3_fs, g3_cfg):
@@ -45,7 +45,6 @@ def test_npc_inventory_without_body_parts(g3_world, g3_catalog):
     inv = [i.code for n in npcs for i in n.inventory]
     assert len(inv) > 50
     assert all(code in g3_catalog or code.startswith("?") for code in inv)
-    assert all(i.source == "zen" for i in wd.items)
 
 
 def test_most_item_codes_in_catalog(g3_world, g3_catalog):
@@ -73,3 +72,19 @@ def test_treasure_sets_on_holders(g3_world):
     assert tjalf.treasure_sets == ["TS_Unique_Weapons"]
     inog = next(n for n in npcs if n.code == "Inog")
     assert inog.treasure_sets == ["TS_Plunder_Reb_Elite", "TS_Weaponry_Merc_2H", "TS_PickPocket_Medium"]
+
+
+def test_disabled_story_sectors_included_and_marked(g3_world, g3_fs, g3_cfg):
+    # sectors =false in wrldatasc are switched on by quests: their content is in, marked as story content
+    assert g3_cfg.include_disabled_sectors
+    paths = active_sectors(g3_fs, "G3_World_01", g3_cfg.sector_exclude, include_disabled=True)
+    assert any(p.endswith("G3_Nordmar_01_WhiteShadowbeast.lrentdat") for p in paths)
+    assert not any("test" in p.lower() for p in paths)
+    wd, npcs = g3_world
+    cups = [i for i in wd.items if i.spot == "G3_Nordmar_01_Monastery_FiremageCups_Blessed"]
+    assert len(cups) == 12 and all(i.source == "script" for i in cups)
+    beast = next(n for n in npcs if n.code == "WhiteShadowbeast")
+    assert beast.insert_function == STORY_SECTOR and beast.insert_waypoint == "G3_Nordmar_01_WhiteShadowbeast"
+    inog = next(n for n in npcs if n.code == "Inog")
+    assert inog.insert_function == ""
+    assert all(i.source == "zen" and i.spot is None for i in wd.items if i not in cups and i.source == "zen")

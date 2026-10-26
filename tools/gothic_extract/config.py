@@ -36,6 +36,7 @@ class GameConfig:
     pak_files: list[str] = field(default_factory=list)  # G3: .pak/.pNN archives relative to root
     sector_exclude: list[str] = field(default_factory=list)  # G3: fnmatch patterns of sectors left out
     routine_slots: dict[str, list[str]] = field(default_factory=dict)  # G3: routine point kind -> "HH:MM–HH:MM" slots
+    include_disabled_sectors: bool = False  # G3: also sectors =false in the world file (switched on by quests)
 
 
 def _list_vdfs(root: Path, pattern: str, exclude: list[str]) -> list[str]:
@@ -73,6 +74,7 @@ def load_game(key: str) -> GameConfig:
         pak_files=_list_vdfs(root, entry["pak_glob"], entry.get("pak_exclude", [])) if "pak_glob" in entry and root.exists() else [],
         sector_exclude=entry.get("sector_exclude", []),
         routine_slots=entry.get("routine_slots", {}),
+        include_disabled_sectors=entry.get("include_disabled_sectors", False),
     )
 
 

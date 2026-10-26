@@ -27,11 +27,13 @@ _OBJ_HEAD = b"\x01\x00\x01\x01\x00\x01"
 _ROUTINE_POINTS = [("WorkingPoint", "work", "WORK"), ("RelaxingPoint", "relax", "RELAX"),
                    ("SleepingPoint", "sleep", "SLEEP")]
 DASH = "–"
+STORY_SECTOR = "sektor fabularny"  # NpcRec.insert_function of NPCs from sectors the quests switch on
 
 
 @dataclass
 class _Loaded:
     sector: str
+    enabled: bool  # sector =true in the world file (present from the start of the game)
     entity: Entity
     data: bytes
     strings: list[str]
@@ -45,24 +47,33 @@ class WorldStats:
     unknown_templates: Counter = field(default_factory=Counter)
 
 
-def active_sectors(fs: G3Fs, world: str, exclude: list[str]) -> list[str]:
-    """Entity files (<sector>/<sector>.lrentdat) of the sectors enabled in <world>.wrldatasc, without `exclude`."""
+def active_sectors(fs: G3Fs, world: str, exclude: list[str], include_disabled: bool = False) -> list[str]:
+    """Entity files (<sector>/<sector>.lrentdat) of the sectors enabled in <world>.wrldatasc, without `exclude`;
+    with include_disabled also the sectors set to false (story scenes switched on by quests), after the others."""
+    return [p for p, _ in sector_files(fs, world, exclude, include_disabled)]
+
+
+def sector_files(fs: G3Fs, world: str, exclude: list[str], include_disabled: bool = False) -> list[tuple[str, bool]]:
+    """(entity file, enabled at the start) per sector, see active_sectors."""
     text = fs.find(f"{world}/{world}.wrldatasc")
     if text is None:
         raise FileNotFoundError(f"{world}.wrldatasc not found")
-    enabled, section = [], ""
+    enabled, disabled, section = [], [], ""
     for line in text.decode("latin-1").splitlines():
         line = line.strip()
         if line.startswith("["):
             section = line
             continue
         name, sep, value = line.partition("=")
-        if section == "[Sector.List]" and sep and value.strip().lower() == "true":
-            if not any(fnmatch.fnmatch(name.lower(), p.lower()) for p in exclude):
-                enabled.append(name.lower())
+        if section != "[Sector.List]" or not sep or any(fnmatch.fnmatch(name.lower(), p.lower()) for p in exclude):
+            continue
+        (enabled if value.strip().lower() == "true" else disabled).append(name.lower())
     files = {p.split("/")[-1][:-len(".lrentdat")].lower(): p for p in fs.list(world + "/", ".lrentdat")
              if p.split("/")[-2].lower() + ".lrentdat" == p.split("/")[-1].lower()}
-    return [files[s] for s in enabled if s in files]
+    out = [(files[s], True) for s in enabled if s in files]
+    if include_disabled:
+        out += [(files[s], False) for s in disabled if s in files]
+    return out
 
 
 def stacks(obj: PropertyObject, data: bytes, strings: list[str]) -> list[PropertyObject]:
@@ -132,9 +143,9 @@ class _Resolver:
         return out
 
 
-def _load(fs: G3Fs, paths: list[str], stats: WorldStats) -> list[_Loaded]:
+def _load(fs: G3Fs, paths: list[tuple[str, bool]], stats: WorldStats) -> list[_Loaded]:
     out, seen = [], set()
-    for path in paths:
+    for path, enabled in paths:
         data = fs.find(path)
         if not data.startswith(b"GENOMFLE"):
             stats.unsupported_sectors.append(path)
@@ -150,7 +161,7 @@ def _load(fs: G3Fs, paths: list[str], stats: WorldStats) -> list[_Loaded]:
                 continue
             if e.guid:
                 seen.add(e.guid)
-            out.append(_Loaded(sector, e, data, strings, parent))
+            out.append(_Loaded(sector, enabled, e, data, strings, parent))
             stack.extend((c, e) for c in e.children)
     return out
 
@@ -159,7 +170,7 @@ def extract_world(fs: G3Fs, cfg: GameConfig, world: str, templates: dict[str, Te
                   strings: dict[str, str], stats: WorldStats | None = None) -> tuple[WorldData, list[NpcRec]]:
     stats = stats if stats is not None else WorldStats()
     res = _Resolver(templates, stats)
-    loaded = _load(fs, active_sectors(fs, world, cfg.sector_exclude), stats)
+    loaded = _load(fs, sector_files(fs, world, cfg.sector_exclude, cfg.include_disabled_sectors), stats)
     by_guid = {x.entity.guid: x.entity for x in loaded if x.entity.guid}
     holders = {id(x.entity) for x in loaded if "gCInventory_PS" in x.entity.props}
 
@@ -170,7 +181,9 @@ def extract_world(fs: G3Fs, cfg: GameConfig, world: str, templates: dict[str, Te
         if "gCItem_PS" in e.props and not (x.parent is not None and id(x.parent) in holders):
             code = res.code(e.creator, fallback=e.name)
             if code:
-                wd.items.append(ItemRec(code, _value(e, "gCItem_PS", "Amount", 1) or 1, e.pos, "zen", None, None))
+                # items of story sectors appear during the game: "script" with the sector as the spot
+                source, spot = ("zen", None) if x.enabled else ("script", x.sector)
+                wd.items.append(ItemRec(code, _value(e, "gCItem_PS", "Amount", 1) or 1, e.pos, source, None, spot))
         elif "gCInventory_PS" in e.props and "gCNPC_PS" not in e.props:
             locked = _value(e, "gCLock_PS", "Status") == 0
             key = res.code(_value(e, "gCLock_PS", "Key")) if locked else None
@@ -207,7 +220,7 @@ def _npc(x: _Loaded, res: _Resolver, by_guid: dict[str, Entity], cfg: GameConfig
         guild_name=alignment_code(align),
         level=_value(e, "gCNPC_PS", "Level", 0) or 0,
         insert_waypoint=x.sector,
-        insert_function="",
+        insert_function="" if x.enabled else STORY_SECTOR,
         chapter=None,
         pos=e.pos,
         inventory=inventory,

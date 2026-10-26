@@ -209,8 +209,13 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
 - **Gildie**: G3 nie ma gildii. `guild_name` to stronnictwo postaci (`gEPoliticalAlignment`): `ORC` (Orkowie),
   `NRD` (Barbarzyńcy), `REB` (Buntownicy), `MID` (Druid), `ASS` (Asasyn), `NOM` (Koczownicy) — polskie nazwy z ekranu
   reputacji gry w `guild_names` — oraz `OUT`, `SLAVE` i `NONE` bez tekstu w grze (`null`). Zwierzęta i potwory mają `NONE`.
-- **Przedmioty** (`items.geojson`, `source: "zen"`) to przedmioty leżące w świecie od początku gry (w G3 w większości
-  rośliny). `spot` jest zawsze `null`.
+- **Przedmioty** (`items.geojson`): `source: "zen"` = leżą w świecie od początku gry (w G3 w większości rośliny),
+  `spot` = `null`. `source: "script"` = przedmiot ze **sceny fabularnej**: sektora świata, który gra włącza dopiero
+  w trakcie zadań (np. pobłogosławione kielichy w klasztorze, kolejne stany kopalni w Geldern); `spot` = nazwa
+  tego sektora, a etykieta w wyszukiwarce to „wstawiany skryptem (<sektor>)”.
+- **Sceny fabularne**: postacie z takich sektorów (biały cieniostwór, orkowie Kalana, demon i szkielety z kronik
+  klasztoru…) mają `insert_function` = `"sektor fabularny"`, a `insert_waypoint` = nazwa sektora. Kolejne stany
+  jednego miejsca (np. kopalnia w Geldern przed i po wyzwoleniu) są w paczce razem.
 - **Skrzynie**: `pick_string` jest zawsze `null` (G3 nie ma kombinacji zamków; zamek ma trudność, klucz w `key`).
   `contents` to tylko stałe przedmioty (w G3 rzadkie). **Większość zawartości skrzyń i postaci G3 jest losowana**
   z zestawów łupu — patrz „Losowy łup (tylko G3)” niżej.

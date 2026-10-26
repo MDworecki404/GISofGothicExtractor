@@ -96,6 +96,9 @@ pak_exclude = ["Speech_*", "Music*", "Sound*"]
 anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
 # Developer test sectors; some are enabled (=true) in G3_World_01.wrldatasc but are not part of the game.
 sector_exclude = ["*Test*", "BjoernTest_*", "Hoshi_*", "Mario_*", "Mattes_*"]
+# Sectors =false in the world file are story scenes the quests switch on (Geldern mine states, Kalan's orcs,
+# the white shadowbeast, blessed fire mage cups…). Included and marked as story content (user decision 2026-10-26).
+include_disabled_sectors = true
 
 # G3 stores only the points (work / relax / sleep); the hours live in the game code.
 # Working values, to be confirmed in the game. Separator is the en dash "–" (geoportal.DASH).
