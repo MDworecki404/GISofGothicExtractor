@@ -53,12 +53,12 @@ def active_sectors(fs: G3Fs, world: str, exclude: list[str], include_disabled: b
     return [p for p, _ in sector_files(fs, world, exclude, include_disabled)]
 
 
-def sector_files(fs: G3Fs, world: str, exclude: list[str], include_disabled: bool = False) -> list[tuple[str, bool]]:
-    """(entity file, enabled at the start) per sector, see active_sectors."""
+def _sector_list(fs: G3Fs, world: str, exclude: list[str]) -> list[tuple[str, bool]]:
+    """(sector name as written, enabled) from [Sector.List] of <world>.wrldatasc, without `exclude`."""
     text = fs.find(f"{world}/{world}.wrldatasc")
     if text is None:
         raise FileNotFoundError(f"{world}.wrldatasc not found")
-    enabled, disabled, section = [], [], ""
+    out, section = [], ""
     for line in text.decode("latin-1").splitlines():
         line = line.strip()
         if line.startswith("["):
@@ -67,12 +67,23 @@ def sector_files(fs: G3Fs, world: str, exclude: list[str], include_disabled: boo
         name, sep, value = line.partition("=")
         if section != "[Sector.List]" or not sep or any(fnmatch.fnmatch(name.lower(), p.lower()) for p in exclude):
             continue
-        (enabled if value.strip().lower() == "true" else disabled).append(name.lower())
+        out.append((name.strip(), value.strip().lower() == "true"))
+    return out
+
+
+def sector_names(fs: G3Fs, world: str, exclude: list[str], include_disabled: bool = False) -> list[str]:
+    """Names of the sectors in the world (enabled ones, plus the disabled story sectors with include_disabled)."""
+    return [n for n, on in _sector_list(fs, world, exclude) if on or include_disabled]
+
+
+def sector_files(fs: G3Fs, world: str, exclude: list[str], include_disabled: bool = False) -> list[tuple[str, bool]]:
+    """(entity file, enabled at the start) per sector, see active_sectors; enabled sectors first."""
     files = {p.split("/")[-1][:-len(".lrentdat")].lower(): p for p in fs.list(world + "/", ".lrentdat")
              if p.split("/")[-2].lower() + ".lrentdat" == p.split("/")[-1].lower()}
-    out = [(files[s], True) for s in enabled if s in files]
+    sectors = _sector_list(fs, world, exclude)
+    out = [(files[n.lower()], True) for n, on in sectors if on and n.lower() in files]
     if include_disabled:
-        out += [(files[s], False) for s in disabled if s in files]
+        out += [(files[n.lower()], False) for n, on in sectors if not on and n.lower() in files]
     return out
 
 

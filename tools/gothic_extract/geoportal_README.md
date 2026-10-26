@@ -37,7 +37,8 @@ i `quests_package` uruchamiane osobno zostawiają paczkę niedokończoną (`geop
 | `package.files` | pliki i katalogi paczki (katalog z `/` na końcu) |
 | `guild_names` | kod gildii → polska nazwa **z gry** (tablica `TXT_GUILDS` skryptów), dla gildii występujących w tym świecie; `null`, gdy gra nie ma tekstu. Kody to wartości `guild_name` w `npcs.geojson` i `characters.geojson`. |
 | `movement_speeds_m_s` | prędkości gracza w m/s: `walk`, `run`, `sneak`, `walk_armed`, liczone z pętli animacji szkieletu HUMANS |
-| `movement_speeds_animations` | nazwy animacji `.MAN`, z których policzono prędkości |
+| `movement_speeds_animations` | nazwy animacji `.MAN`, z których policzono prędkości (w G3 puste) |
+| `movement_speeds_parameters` | tylko G3: `{source, properties}` — parametry ruchu, z których policzono prędkości |
 | `zenkit_version`, `generated_at` | informacyjne |
 
 ## Modele 3D
@@ -185,7 +186,7 @@ Khorinis: warstwy i indeks ~2 MB, `world.glb` ~150 MB, `models/` ~60 MB. Światy
 | `dist/g1/stara-kopalnia` | `OLDMINE` | Stara Kopalnia (nazwa robocza); `chapter = null`. |
 | `dist/g1/cmentarzysko-orkow` | `ORCGRAVEYARD` | Cmentarzysko orków (nazwa z dziennika gry, temat `CH3_ORCGRAVEYARD`); `chapter = null`. |
 | `dist/g1/swiatynia-orkow` | `ORCTEMPEL` | Świątynia orków (nazwa robocza); `chapter = null`. |
-| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Teren jest, budynków i modeli obiektów jeszcze nie ma (patrz „Różnice Gothic 3”). |
+| `dist/g3/myrtana` | `G3_WORLD_01` | Cały kontynent Gothic 3: Myrtana, Nordmar i Varant w jednym świecie (nazwa robocza „Myrtana”). Teren, budynki i obiekty, bez drzew i obiektów animowanych (patrz „Różnice Gothic 3”). |
 
 Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy ogląda się osobno.
 
@@ -233,9 +234,21 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
   zanieść). `items`: `handover` (co oddać) i `reward` (co dostaje gracz). `rewards.xp` = doświadczenie za zadanie.
 - **Teren** (`world.glb`): cały kontynent (komórki terenu Myrtany, Nordmaru i Varantu, ~2,4 mln trójkątów, ~150 MB),
   w tych samych osiach i jednostkach co w G1/G2. Teren w grze miesza kilka tekstur na materiał; w glTF każdy z 89
-  materiałów ma swoją teksturę podstawową, zmniejszoną do 512 px. Budynki i obiekty jeszcze nie są w modelu.
-- **Brakuje jeszcze**: `vobs.glb` i `models/` (budynki, obiekty, modele przedmiotów) oraz prędkości ruchu
-  (`movement_speeds_m_s = null`). Przyjdą w kolejnych etapach.
+  materiałów ma swoją teksturę podstawową, zmniejszoną do 512 px.
+- **Budynki i obiekty** (`vobs.glb`, `models/*.glb`): 3219 modeli, ~122 600 wystąpień (budynki, mury, skały,
+  meble, przedmioty leżące w świecie), tekstury zmniejszone do 256 px. `vobs.glb` ma ~360 MB, `models/` ~340 MB
+  (G3 ma wielokrotnie więcej obiektów niż Khorinis). W `vobs.glb` położenie węzła jest macierzą (`matrix`), w
+  `models/*.glb` instancje mają oprócz `TRANSLATION` i `ROTATION` także **`SCALE`** (obiekty G3 bywają skalowane
+  i odbite lustrzanie — odbicie to ujemna skala). **Nie ma** drzew SpeedTree (~57 400, osobny format `.spt`) ani
+  obiektów z animowaną siatką (skrzynie, drzwi, łuki i kusze — jak `.MDS`/`.MMS` w G1/G2); `models/index.json`
+  liczy je w `unhandled` (`speedtree`, `animated`), a modele, których nie ma w plikach gry, w `missing` i
+  `missing_instances`.
+- **Podglądy przedmiotów** (`models/previews/`): 177 plików dla 567 przedmiotów, jak w G1/G2. Bez podglądu:
+  przedmioty bez modelu w grze (zwoje, czary, umiejętności…) i łuki/kusze (`model: null`).
+- **Prędkości ruchu** (`movement_speeds_m_s`): z parametrów ruchu bohatera (`PC_Hero`, `gCCharacterMovement_PS`),
+  nie z animacji jak w G1/G2: bieg = `ForwardSpeedMax` (4,0 m/s), chód = bieg × `SlowModifier` (1,5 m/s),
+  skradanie = chód × `SneakModifier` (1,05 m/s), `walk_armed` = chód. `movement_speeds_animations` jest puste,
+  źródło jest w `movement_speeds_parameters`.
 
 ### Losowy łup (tylko G3)
 

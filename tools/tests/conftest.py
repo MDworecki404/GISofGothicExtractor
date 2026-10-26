@@ -126,7 +126,8 @@ def g3_out(g3_cfg, tmp_path_factory):
     from gothic_extract.g3.__main__ import main
 
     out = tmp_path_factory.mktemp("g3") / "g3_world_01"
-    assert main(["--out", str(out), "--skip-mesh"]) == 0  # terrain: test_g3_terrain
+    # terrain, models and previews have their own tests (test_g3_terrain, test_g3_models)
+    assert main(["--out", str(out), "--skip-mesh", "--skip-models", "--skip-previews"]) == 0
     return out
 
 

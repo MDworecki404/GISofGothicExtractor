@@ -13,9 +13,10 @@ from .archive import open_g3fs
 from .catalog import build_g3_catalog
 from .strings import load_strings
 from .templates import load_templates
+from .models import export_item_previews, export_models, node_files, node_placements, speedtrees, world_placements
 from .terrain import export_terrain_glb, landscape_meshes
 from .treasure import load_treasure_sets
-from .world import WorldStats, extract_world
+from .world import WorldStats, extract_world, sector_names
 
 
 def write_treasure_sets(out: Path, sets: dict, catalog: dict, wd, npcs) -> None:
@@ -45,7 +46,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--world", default="G3_World_01", help="world folder in Projects_compiled")
     ap.add_argument("--game", default="g3", help="key from games.toml")
     ap.add_argument("--skip-mesh", action="store_true", help="do not export world.glb (terrain)")
-    ap.add_argument("--max-texture", type=int, default=512, help="largest texture side in world.glb (pixels)")
+    ap.add_argument("--skip-models", action="store_true", help="do not export vobs.glb and models/*.glb")
+    ap.add_argument("--skip-previews", action="store_true", help="do not export item previews (models/previews)")
+    ap.add_argument("--max-texture", type=int, default=512, help="largest terrain texture side (pixels)")
+    ap.add_argument("--max-model-texture", type=int, default=256,
+                    help="largest texture side of objects and item previews (pixels); 342 textures, keeps vobs.glb smaller")
     args = ap.parse_args(argv)
 
     cfg = load_game(args.game)
@@ -67,6 +72,20 @@ def main(argv: list[str] | None = None) -> int:
         mesh = export_terrain_glb(fs, landscape_meshes(fs), args.out / "world.glb", args.max_texture)
         print(f"  triangles: {mesh.triangles}, materials: {mesh.materials}, "
               f"missing textures: {len(mesh.textures_missing)}", flush=True)
+    if not args.skip_models:
+        print("[4/4] objects and items -> vobs.glb, models/*.glb", flush=True)
+        nodes = node_files(fs, args.world, sector_names(fs, args.world, cfg.sector_exclude, cfg.include_disabled_sectors))
+        world_places, animated = world_placements(fs, cfg, args.world)
+        mr = export_models(fs, node_placements(fs, nodes) + world_places, args.out / "models", args.max_model_texture,
+                           {"speedtree": speedtrees(fs, nodes), "animated": animated})
+        print(f"  models: {mr.models}, instances: {mr.instances}, missing: {sum(mr.missing.values())}, "
+              f"not supported: {mr.unhandled}", flush=True)
+    if not args.skip_previews:
+        # after the world models: their export clears models/textures, previews only add to it
+        print("[4/4] item previews -> models/previews/*.glb", flush=True)
+        pr = export_item_previews(fs, catalog, args.out / "models" / "previews", args.max_model_texture)
+        reasons = {r: sum(1 for v in pr.reason.values() if v == r) for r in ("no_visual", "no_mesh")}
+        print(f"  previews: {len(pr.entries)}, items without preview: {reasons}", flush=True)
     print(f"[4/4] writing GeoJSON to {args.out}", flush=True)
     report = write_outputs(args.out, cfg, args.world.upper(), wd, catalog, npcs, [], mesh)
 

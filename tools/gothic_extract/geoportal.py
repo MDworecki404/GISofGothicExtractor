@@ -130,6 +130,7 @@ def _routine_groups(routine_feats: list[dict], codes: set[str]) -> list[dict]:
 
 
 PREVIEWS_DIR = "previews"
+STATIC_MESHES = (".3DS", ".XCMSH", ".XLMSH")  # G1/G2 .3DS, G3 compiled meshes
 
 
 def load_preview_index(index: dict) -> dict[str, str]:
@@ -141,13 +142,13 @@ def resolve_model(code: str, catalog: dict, previews: dict[str, str]) -> tuple[s
     """Item code -> (preview path relative to models/, e.g. "previews/itfo_apple.glb", None) or (None, reason).
 
     Path: code -> catalog visual -> models/previews/index.json entry with that visual (case-insensitive).
-    Reasons: "no_visual" (no visual in the catalog), "unsupported_visual" (not a static .3DS mesh, e.g. .MMS
+    Reasons: "no_visual" (no visual in the catalog), "unsupported_visual" (not a static mesh, e.g. .MMS
     bows), "no_preview" (static mesh, but no preview file was exported for it).
     """
     visual = (catalog.get(code, {}).get("visual") or "").upper()
     if not visual:
         return None, "no_visual"
-    if not visual.endswith(".3DS"):
+    if not visual.endswith(STATIC_MESHES):
         return None, "unsupported_visual"
     if visual not in previews:
         return None, "no_preview"
