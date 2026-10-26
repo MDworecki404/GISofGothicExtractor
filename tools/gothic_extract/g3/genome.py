@@ -39,6 +39,13 @@ class Reader:
         self.pos += size
         return v
 
+    def string(self, strings: list[str] | None) -> str:
+        """A string reference: u16 index into `strings`, or (strings None: files saved without the GENOMFLE
+        header) an inline string, u16 length + latin-1 bytes."""
+        if strings is None:
+            return self.take(self.u16()).decode("latin-1")
+        return strings[self.u16()]
+
     def u16_at(self, pos: int) -> int | None:
         return struct.unpack_from("<H", self.data, pos)[0] if pos + 2 <= len(self.data) else None
 
@@ -147,8 +154,10 @@ class PropertyObject:
     data_end: int
 
 
-def decode_value(type_name: str, raw: bytes, strings: list[str]) -> object:
+def decode_value(type_name: str, raw: bytes, strings: list[str] | None) -> object:
     n = len(raw)
+    if strings is None and "String" in type_name and n >= 2 and n == 2 + struct.unpack_from("<H", raw)[0]:
+        return raw[2:].decode("latin-1")
     if type_name in ("bool", "char") and n == 1:
         return raw[0]
     if type_name == "short" and n == 2:
@@ -190,13 +199,14 @@ def _proxy_guid(raw: bytes) -> str | None:
     return None
 
 
-def read_property_object(r: Reader, strings: list[str]) -> PropertyObject | None:
+def read_property_object(r: Reader, strings: list[str] | None) -> PropertyObject | None:
+    """strings None: the file has no GENOMFLE string table and names every string inline."""
     r.expect(1, 2, "accessor version")
     if not r.u8():
         return None
     r.expect(1, 2, "object version")
     r.expect(1, 1, "persistable")
-    cls = strings[r.u16()]
+    cls = r.string(strings)
     r.expect(1, 2, "object flag")
     r.expect(0, 1, "object flag")
     class_version = r.u16()
@@ -209,7 +219,8 @@ def read_property_object(r: Reader, strings: list[str]) -> PropertyObject | None
     r.expect(PROP_VERSION, 2, f"{cls} property version")
     props: dict[str, Prop] = {}
     for _ in range(r.u32()):
-        name, type_name = strings[r.u16()], strings[r.u16()]
+        name = r.string(strings)
+        type_name = r.string(strings)
         r.expect(PROP_VERSION, 2, f"{cls}.{name} version")
         raw = r.take(r.u32())
         props[name] = Prop(name, type_name, raw, decode_value(type_name, raw, strings))

@@ -69,3 +69,12 @@ def test_entity_proxy_with_guid():
     raw = bytes.fromhex("010001" "2ebd7eb46bc9444a966dae3e53449712" "00000000")
     assert decode_value("eCEntityProxy", raw, []) == "{b47ebd2e-c96b-4a44-966d-ae3e53449712}"
     assert decode_value("eCTemplateEntityProxy", bytes.fromhex("010000"), []) is None
+
+
+def test_property_object_with_inline_strings(g3_fs):
+    # meshes/geometry saved without the GENOMFLE header name everything inline (u16 length + bytes)
+    data = g3_fs.find("G3_World_Lowpoly_Landscape_01/G3_World_Landscape_Lowpoly_008.xcmsh")
+    assert not data.startswith(b"GENOMFLE")
+    obj = read_property_object(Reader(data, 0), None)
+    assert obj.cls == "eCResourceMeshComplex_PS" and set(obj.props) == {"BoundingBox", "ResourcePriority"}
+    assert obj.props["ResourcePriority"].value == 0.0
