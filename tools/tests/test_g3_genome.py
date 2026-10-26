@@ -61,3 +61,11 @@ def test_navigation_point_lists(g3_fs):
     assert pts and all(g.startswith("{") and len(g) == 38 for g in pts)
     assert all(isinstance(o.props["RoutineNames"].value, list) for o in navs)
     assert isinstance(navs[0].props["WorkingPoint"].value, (str, type(None)))
+
+
+def test_entity_proxy_with_guid():
+    from gothic_extract.g3.genome import decode_value
+
+    raw = bytes.fromhex("010001" "2ebd7eb46bc9444a966dae3e53449712" "00000000")
+    assert decode_value("eCEntityProxy", raw, []) == "{b47ebd2e-c96b-4a44-966d-ae3e53449712}"
+    assert decode_value("eCTemplateEntityProxy", bytes.fromhex("010000"), []) is None

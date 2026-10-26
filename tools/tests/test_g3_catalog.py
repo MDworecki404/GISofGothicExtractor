@@ -27,3 +27,9 @@ def test_patched_template_wins(g3_fs, g3_templates):
 def test_template_guid_matches_index(g3_templates):
     t = g3_templates["{ff68c3ea-4b6b-49a1-9866-adf806250707}"]
     assert t.name == "It_Plant_Perm_01" and t.path.endswith("Plants_Story_It_Plant_Perm_01.tple")
+
+
+def test_world_references_resolve_to_template(g3_templates):
+    # world entities (creator) and inventory stacks point at the template's content entity (entity 1)
+    assert g3_templates["{949268a2-8274-4859-8903-bf7a7fec50aa}"].name == "It_Plant_Perm_01"
+    assert g3_templates["{aa968670-912b-40a6-9241-715851931dd2}"].name == "It_Gold"

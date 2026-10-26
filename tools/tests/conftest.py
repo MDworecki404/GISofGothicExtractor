@@ -111,3 +111,10 @@ def g3_catalog(g3_templates, g3_strings):
     from gothic_extract.g3.catalog import build_g3_catalog
 
     return build_g3_catalog(g3_templates, g3_strings)
+
+
+@pytest.fixture(scope="session")
+def g3_world(g3_fs, g3_cfg, g3_templates, g3_strings):
+    from gothic_extract.g3.world import extract_world
+
+    return extract_world(g3_fs, g3_cfg, "G3_World_01", g3_templates, g3_strings)

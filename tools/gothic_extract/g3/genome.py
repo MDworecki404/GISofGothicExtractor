@@ -184,10 +184,9 @@ def _property_id(raw: bytes) -> str | None:
 
 
 def _proxy_guid(raw: bytes) -> str | None:
-    """Entity proxy: u16 version, u8 has-guid, then bCGuid (20 bytes) when set."""
-    if len(raw) >= 23 and raw[2]:
-        g = raw[3:23]
-        return guid_str(g[:16]) if g[16] else None
+    """Entity proxy: u16 version, u8 has-guid, then a bCPropertyID (16-byte GUID + u32 0) when set."""
+    if len(raw) >= 23 and raw[2] and any(raw[3:19]):
+        return guid_str(raw[3:19])
     return None
 
 
