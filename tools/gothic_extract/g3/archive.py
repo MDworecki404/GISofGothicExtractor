@@ -92,6 +92,13 @@ class G3Fs:
             data = f.read(e.packed)
         return zlib.decompress(data) if e.compression == 2 and e.packed != e.size else data
 
+    def find_name(self, name: str) -> bytes | None:
+        """A file by its name alone (any folder), as materials and meshes reference textures and materials."""
+        if not hasattr(self, "_by_name"):
+            self._by_name = {key.rsplit("/", 1)[-1]: key for key in self._files}
+        key = self._by_name.get(name.replace("\\", "/").rsplit("/", 1)[-1].lower())
+        return self.find(key) if key else None
+
     def source(self, path: str) -> str | None:
         hit = self._get(path)
         return hit[0].name if hit else None
