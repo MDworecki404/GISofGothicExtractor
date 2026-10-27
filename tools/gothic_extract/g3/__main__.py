@@ -75,15 +75,17 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_models:
         print("[4/4] objects and items -> vobs.glb, models/*.glb", flush=True)
         nodes = node_files(fs, args.world, sector_names(fs, args.world, cfg.sector_exclude, cfg.include_disabled_sectors))
-        world_places, animated = world_placements(fs, cfg, args.world)
+        world_places, animated = world_placements(fs, cfg, args.world, templates)
         mr = export_models(fs, node_placements(fs, nodes) + world_places, args.out / "models", args.max_model_texture,
-                           {"speedtree": speedtrees(fs, nodes), "animated": animated})
+                           {"speedtree": speedtrees(fs, nodes), "animated_unreadable": animated})
         print(f"  models: {mr.models}, instances: {mr.instances}, missing: {sum(mr.missing.values())}, "
+              f"unreadable animated: {animated}, "
               f"not supported: {mr.unhandled}", flush=True)
     if not args.skip_previews:
         # after the world models: their export clears models/textures, previews only add to it
         print("[4/4] item previews -> models/previews/*.glb", flush=True)
-        pr = export_item_previews(fs, catalog, args.out / "models" / "previews", args.max_model_texture)
+        pr = export_item_previews(fs, catalog, args.out / "models" / "previews", args.max_model_texture,
+                                  extra_visuals=[c.visual for c in wd.containers if c.visual])
         reasons = {r: sum(1 for v in pr.reason.values() if v == r) for r in ("no_visual", "no_mesh")}
         print(f"  previews: {len(pr.entries)}, items without preview: {reasons}", flush=True)
     print(f"[4/4] writing GeoJSON to {args.out}", flush=True)

@@ -25,7 +25,7 @@ from .image import material_texture, ximg_to_png
 from .mesh import MeshElement, load_mesh
 
 _F = np.diag([1.0, 1.0, -1.0])
-VISUAL_CLASSES = ("eCVisualMeshStatic_PS", "eCVisualMeshDynamic_PS")
+VISUAL_CLASSES = ("eCVisualMeshStatic_PS", "eCVisualMeshDynamic_PS", "eCVisualAnimation_PS")
 
 
 @dataclass
@@ -96,11 +96,25 @@ def node_placements(fs: G3Fs, paths: list[str]) -> list[Placement]:
     return out
 
 
-def world_placements(fs: G3Fs, cfg, world: str) -> tuple[list[Placement], int]:
-    """Meshes of world entities (items on the ground, props) → (placements, animated visuals not exported).
+def visual_path(e) -> str | None:
+    """Mesh of an entity's visual: ResourceFilePath, or ResourceFileName when the path is empty (torches,
+    scrolls, maps)."""
+    vis = next((e.props[c] for c in VISUAL_CLASSES if c in e.props), None)
+    if vis is None:
+        return None
+    for prop in ("ResourceFilePath", "ResourceFileName"):
+        v = vis.props[prop].value if prop in vis.props else None
+        if isinstance(v, str) and v:
+            return v
+    return None
 
-    NPCs and everything below an NPC or a container (body parts, carried things) are left out; chests and doors
-    have animated meshes (eCVisualAnimation_PS) and are only counted."""
+
+def world_placements(fs: G3Fs, cfg, world: str, templates: dict | None = None) -> tuple[list[Placement], int]:
+    """Meshes of world entities → (placements, animated visuals whose actor cannot be read).
+
+    Items on the ground, props, chests, doors (animated meshes: their rest pose, see actor.py). NPCs and everything
+    below an NPC or a container (body parts, carried things) are left out. An entity with an empty mesh path
+    (torches, scrolls) shows the mesh of the template it was made from (`templates`)."""
     from .world import WorldStats, _load, sector_files
 
     loaded = _load(fs, sector_files(fs, world, cfg.sector_exclude, cfg.include_disabled_sectors), WorldStats())
@@ -110,12 +124,15 @@ def world_placements(fs: G3Fs, cfg, world: str) -> tuple[list[Placement], int]:
         e = x.entity
         if "gCNPC_PS" in e.props or (x.parent is not None and id(x.parent) in holders):
             continue
-        vis = next((e.props[c] for c in VISUAL_CLASSES if c in e.props), None)
-        if vis is not None and isinstance(vis.props.get("ResourceFilePath") and vis.props["ResourceFilePath"].value, str):
-            out.append(Placement(vis.props["ResourceFilePath"].value, "item" if "gCItem_PS" in e.props else "vob",
-                                 e.world))
-        elif "eCVisualAnimation_PS" in e.props:
+        path = visual_path(e)
+        if path is None and templates and e.creator in templates and any(c in e.props for c in VISUAL_CLASSES):
+            path = visual_path(templates[e.creator].entity)
+        if path is None:
+            continue
+        if path.lower().endswith(".fxa") and not load_mesh(fs, path):
             animated += 1
+            continue
+        out.append(Placement(path, "item" if "gCItem_PS" in e.props else "vob", e.world))
     return out, animated
 
 
@@ -151,7 +168,8 @@ class _Builder:
 
     def _png(self, material: str):
         if material not in self.tex_cache:
-            name = material_texture(self.fs.find_name(material))
+            # .xshmat material -> its diffuse texture; actors name the texture (.ximg) directly
+            name = material if material.lower().endswith(".ximg") else material_texture(self.fs.find_name(material))
             data = self.fs.find_name(name) if name else None
             try:
                 png = ximg_to_png(data, self.max_texture) if data else None
@@ -296,9 +314,11 @@ class PreviewReport:
     reason: dict[str, str | None] = field(default_factory=dict)  # item code -> why there is no preview
 
 
-def export_item_previews(fs: G3Fs, catalog: dict[str, ItemDef], out_dir: Path, max_texture: int = 512) -> PreviewReport:
+def export_item_previews(fs: G3Fs, catalog: dict[str, ItemDef], out_dir: Path, max_texture: int = 512,
+                         extra_visuals: list[str] = ()) -> PreviewReport:
     """One .glb per item mesh: a single copy, centred horizontally, lowest vertex at y = 0, metres; textures in
-    the sibling textures/ folder shared with the world models. Reasons for no preview: no_visual, no_mesh."""
+    the sibling textures/ folder shared with the world models. Reasons for no preview: no_visual, no_mesh.
+    extra_visuals: further meshes to preview without an item code (containers: the chest's own model)."""
     report = PreviewReport()
     out_dir.mkdir(parents=True, exist_ok=True)
     for stale in out_dir.glob("*.glb"):
@@ -306,8 +326,9 @@ def export_item_previews(fs: G3Fs, catalog: dict[str, ItemDef], out_dir: Path, m
     tex_cache: dict = {}
     done: dict[str, str | None] = {}
     codes: dict[str, list[str]] = defaultdict(list)
-    for code, d in sorted(catalog.items()):
-        vis = d.visual or ""
+    wanted = [(code, d.visual or "") for code, d in sorted(catalog.items())]
+    wanted += [(None, v) for v in sorted(set(extra_visuals)) if v]
+    for code, vis in wanted:
         if not vis:
             report.reason[code] = "no_visual"
             continue
@@ -325,6 +346,8 @@ def export_item_previews(fs: G3Fs, catalog: dict[str, ItemDef], out_dir: Path, m
                 report.entries.append({"file": _file_name(vis), "visual": vis, "triangles": tris,
                                        "bounds_m": {k: round(float(v), 4) for k, v in zip("xyz", size)}})
                 done[vis] = _file_name(vis)
+        if code is None:
+            continue
         if done[vis] is None:
             report.reason[code] = "no_mesh"
         else:

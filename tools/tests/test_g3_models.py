@@ -79,21 +79,30 @@ def test_preview_model_for_g3_visual():
     from gothic_extract.geoportal import resolve_model
 
     catalog = {"It_Plant_Perm_01": {"visual": "G3_Item_Perm_01.xcmsh"}}
-    previews = {"G3_ITEM_PERM_01.XCMSH": "previews/g3_item_perm_01.glb"}
+    previews = {"G3_ITEM_PERM_01.XCMSH": "previews/g3_item_perm_01.glb",
+                "IT_WEAPON_RANGED_BOW_01.FXA": "previews/it_weapon_ranged_bow_01.glb"}
     assert resolve_model("It_Plant_Perm_01", catalog, previews) == ("previews/g3_item_perm_01.glb", None)
+    bow = {"It_Bow_01": {"visual": "It_Weapon_Ranged_Bow_01.FXA"}}
+    assert resolve_model("It_Bow_01", bow, previews) == ("previews/it_weapon_ranged_bow_01.glb", None)
 
 
-def test_world_placements(g3_fs, g3_cfg, g3_world):
+def test_world_placements(g3_fs, g3_cfg, g3_world, g3_templates):
     from gothic_extract.g3.models import world_placements
 
-    placements, animated = world_placements(g3_fs, g3_cfg, "G3_World_01")
+    placements, unreadable = world_placements(g3_fs, g3_cfg, "G3_World_01", g3_templates)
     wd, _ = g3_world
     items = [p for p in placements if p.kind == "item"]
-    # every item lying in the world gets its model, except bows and crossbows: animated meshes in G3 (28 items),
-    # like the .MMS bows of G1/G2
-    assert len(wd.items) - 50 <= len(items) <= len(wd.items)
+    assert len(items) == len(wd.items)  # every item lying in the world gets its model (bows: animated actors)
     assert any(p.mesh == "G3_Item_Perm_01.xcmsh" for p in items)
-    assert animated > 1000  # chests, doors: animated meshes, not exported (like .MDS chests in G1/G2)
+    assert sum(1 for p in placements if p.mesh.lower().startswith("g3_chest_body_chest")) > 900  # chests
+    assert unreadable < 50
+
+
+def test_container_previews(g3_fs, tmp_path):
+    out = tmp_path / "models" / "previews"
+    report = export_item_previews(g3_fs, {}, out, extra_visuals=["G3_Chest_Body_Chest.FXA"])
+    (entry,) = report.entries
+    assert entry["visual"] == "G3_Chest_Body_Chest.FXA" and entry["codes"] == []
 
 
 def test_sector_names_include_level_meshes(g3_fs, g3_cfg):

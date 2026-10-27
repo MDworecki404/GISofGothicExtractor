@@ -130,7 +130,7 @@ def _routine_groups(routine_feats: list[dict], codes: set[str]) -> list[dict]:
 
 
 PREVIEWS_DIR = "previews"
-STATIC_MESHES = (".3DS", ".XCMSH", ".XLMSH")  # G1/G2 .3DS, G3 compiled meshes
+STATIC_MESHES = (".3DS", ".XCMSH", ".XLMSH", ".FXA")  # G1/G2 .3DS, G3 compiled meshes and actors (rest pose)
 
 
 def load_preview_index(index: dict) -> dict[str, str]:

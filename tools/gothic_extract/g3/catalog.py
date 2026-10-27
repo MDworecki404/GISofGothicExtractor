@@ -49,12 +49,13 @@ def is_item_template(t: TemplateRec) -> bool:
 
 
 def build_g3_catalog(templates: dict[str, TemplateRec], strings: dict[str, str]) -> dict[str, ItemDef]:
+    from .models import visual_path  # static item mesh, or the animated actor of bows (models imports this module)
+
     catalog: dict[str, ItemDef] = {}
     for t in sorted(templates.values(), key=lambda t: t.path):
         if not is_item_template(t):
             continue
         item = t.entity.props["gCItem_PS"].props
-        mesh = t.entity.props.get("eCVisualMeshDynamic_PS")
         category = item["Category"].value if "Category" in item else 0
         catalog[t.name] = ItemDef(
             code=t.name,
@@ -63,7 +64,7 @@ def build_g3_catalog(templates: dict[str, TemplateRec], strings: dict[str, str])
             main_flag=category,
             flags=0,
             value=item["GoldValue"].value if "GoldValue" in item else 0,
-            visual=mesh.props["ResourceFilePath"].value if mesh and "ResourceFilePath" in mesh.props else "",
+            visual=visual_path(t.entity) or "",
             description=strings.get("ITEMDESC_" + t.name, ""),
         )
     return catalog

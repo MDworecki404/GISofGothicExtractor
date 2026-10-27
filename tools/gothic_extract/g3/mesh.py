@@ -97,11 +97,20 @@ def _lod_names(data: bytes) -> list[str]:
 
 
 def load_mesh(fs, name: str) -> list[MeshElement] | None:
-    """Mesh elements of a .xcmsh, or of the most detailed mesh of a .xlmsh; None when the file is missing or
-    in a format this reader does not know."""
+    """Mesh elements of a .xcmsh, of the most detailed mesh of a .xlmsh, or the rest pose of an animated visual
+    (.FXA / .xact); None when the file is missing or in a format this reader does not know."""
+    if name.lower().endswith(".fxa"):  # animated visual: the compiled actor has the same name
+        name = name[:-4] + ".xact"
     data = fs.find_name(name)
     if data is None:
         return None
+    if name.lower().endswith(".xact"):
+        from .actor import read_xact
+
+        try:
+            return read_xact(data)
+        except (FormatError, IndexError, ValueError):
+            return None
     if name.lower().endswith(".xlmsh"):
         names = _lod_names(data)
         return load_mesh(fs, names[0]) if names else None

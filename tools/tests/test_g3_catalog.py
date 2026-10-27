@@ -41,3 +41,12 @@ def test_entity_inside_unreadable_group_template_resolves(g3_templates, g3_catal
     # its creator (the item template) is read from the raw template-entity header instead
     t = g3_templates["{6d38c316-ef3e-445c-801e-08647deaa5a3}"]
     assert t.name in g3_catalog
+
+
+def test_bow_visual_is_its_animated_actor(g3_catalog):
+    # bows and crossbows have an animated mesh (eCVisualAnimation_PS) instead of a static one
+    assert g3_catalog["It_Bow_01"].visual.lower().endswith(".fxa")
+
+
+def test_visual_from_file_name_when_path_is_empty(g3_catalog):
+    assert g3_catalog["It_Torch"].visual == "G3_Item_Misc_Torch_01.xcmsh"

@@ -109,7 +109,7 @@ w `containers.geojson` ma pole `model`:
 - **ścieżka do modelu podglądu względem `models/`**, np. `"previews/itfo_apple.glb"`;
 - **`null`** — brak podglądu: przedmiot nie ma modelu w katalogu (`visual`), albo jego model nie jest
   statyczną siatką (np. łuki i kusze `.mms` — animowane, jeszcze nieeksportowane).
-  Skrzynie mają dziś zawsze `null` (ich modele `.MDS` nie są jeszcze eksportowane).
+  Skrzynie G1/G2 mają dziś zawsze `null` (ich modele `.MDS` nie są jeszcze eksportowane); w G3 mają podgląd.
 
 Pełny adres buduje aplikacja, np. przy hostingu modeli pod
 `https://gisofgothicmodels.dworecki.dev/g2nk/khorinis/models/`:
@@ -235,16 +235,17 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
 - **Teren** (`world.glb`): cały kontynent (komórki terenu Myrtany, Nordmaru i Varantu, ~2,4 mln trójkątów, ~150 MB),
   w tych samych osiach i jednostkach co w G1/G2. Teren w grze miesza kilka tekstur na materiał; w glTF każdy z 89
   materiałów ma swoją teksturę podstawową, zmniejszoną do 512 px.
-- **Budynki i obiekty** (`vobs.glb`, `models/*.glb`): 3219 modeli, ~122 600 wystąpień (budynki, mury, skały,
-  meble, przedmioty leżące w świecie), tekstury zmniejszone do 256 px. `vobs.glb` ma ~360 MB, `models/` ~340 MB
-  (G3 ma wielokrotnie więcej obiektów niż Khorinis). W `vobs.glb` położenie węzła jest macierzą (`matrix`), w
-  `models/*.glb` instancje mają oprócz `TRANSLATION` i `ROTATION` także **`SCALE`** (obiekty G3 bywają skalowane
-  i odbite lustrzanie — odbicie to ujemna skala). **Nie ma** drzew SpeedTree (~57 400, osobny format `.spt`) ani
-  obiektów z animowaną siatką (skrzynie, drzwi, łuki i kusze — jak `.MDS`/`.MMS` w G1/G2); `models/index.json`
-  liczy je w `unhandled` (`speedtree`, `animated`), a modele, których nie ma w plikach gry, w `missing` i
-  `missing_instances`.
-- **Podglądy przedmiotów** (`models/previews/`): 177 plików dla 567 przedmiotów, jak w G1/G2. Bez podglądu:
-  przedmioty bez modelu w grze (zwoje, czary, umiejętności…) i łuki/kusze (`model: null`).
+- **Budynki i obiekty** (`vobs.glb`, `models/*.glb`): 3237 modeli, ~123 800 wystąpień (budynki, mury, skały,
+  meble, skrzynie, drzwi, przedmioty leżące w świecie), tekstury zmniejszone do 256 px. `vobs.glb` ma ~360 MB,
+  `models/` ~340 MB (G3 ma wielokrotnie więcej obiektów niż Khorinis). W `vobs.glb` położenie węzła jest macierzą
+  (`matrix`), w `models/*.glb` instancje mają oprócz `TRANSLATION` i `ROTATION` także **`SCALE`** (obiekty G3 bywają
+  skalowane i odbite lustrzanie — odbicie to ujemna skala). Obiekty z animowaną siatką (skrzynie, drzwi, łuki,
+  kusze, żarna) są w **pozie spoczynkowej** (skrzynia zamknięta). **Nie ma** drzew SpeedTree (~57 400, osobny format
+  `.spt`) — `models/index.json` liczy je w `unhandled.speedtree`; modele, których nie ma w plikach gry, są w
+  `missing` i `missing_instances`.
+- **Podglądy** (`models/previews/`): 220 plików — modele przedmiotów (także łuków, kusz, zwojów i pochodni) oraz
+  skrzyń. `model` mają 1062 z 1072 skrzyń i 301 z 533 przedmiotów w wyszukiwarce. Bez podglądu: przedmioty bez modelu
+  w grze (czary, umiejętności…) i 24 przedmioty, których modelu brakuje w plikach gry (np. część tarcz wieżowych).
 - **Prędkości ruchu** (`movement_speeds_m_s`): z parametrów ruchu bohatera (`PC_Hero`, `gCCharacterMovement_PS`),
   nie z animacji jak w G1/G2: bieg = `ForwardSpeedMax` (4,0 m/s), chód = bieg × `SlowModifier` (1,5 m/s),
   skradanie = chód × `SneakModifier` (1,05 m/s), `walk_armed` = chód. `movement_speeds_animations` jest puste,
