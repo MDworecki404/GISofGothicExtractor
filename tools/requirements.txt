@@ -4,3 +4,4 @@ pygltflib
 Pillow
 pytest
 matplotlib
+tifffile

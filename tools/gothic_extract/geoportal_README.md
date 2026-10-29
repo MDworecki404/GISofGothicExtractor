@@ -271,3 +271,25 @@ Wszystkie pola poniżej są opcjonalne (w G1/G2 ich nie ma).
   skrzyń) są tylko w `loot`, żeby nie zalewać mapy; aplikacja może na żądanie pokazać ich skrzynie, filtrując
   `containers.geojson`/`npcs.geojson` po `treasure_sets`.
 - `total` nadal liczy tylko sztuki pewne, więc łup go nie zmienia.
+
+## Ortofotomapa (GeoTIFF dla Cesium ion)
+
+Widok z góry świata jako georeferencjonowany GeoTIFF (EPSG:4326, RGBA, kafelki 512×512, Deflate). Renderowany z
+`world.glb` (opcjonalnie `vobs.glb`) tej samej paczki, więc działa dla G1, G2 i G3 bez instalacji gier.
+
+```
+python -m gothic_extract.ortho --pkg dist/g2nk/khorinis --gsd 0.25
+python -m gothic_extract.ortho --pkg dist/g2nk/khorinis --gsd 0.10 --bbox -20 -70 120 90   # wycinek, ENU w metrach od kotwicy
+```
+
+- `--gsd` w metrach na piksel (domyślnie 0,25). `--bbox E0 N0 E1 N1` w metrach od kotwicy (X/100, Z/100 gry);
+  bez niego renderuje cały świat i odmawia, gdy obraz przekracza 2·10⁹ px. `--include-vobs` rysuje też drzewa i drobne obiekty.
+- Wynik: `<paczka>/ortho/<slug>_<gsd>cm.tif` i obok `*.json` (CRS, bbox, rozmiar, gęstość tekstur, ostrzeżenia).
+  Poza obrysem świata alfa = 0.
+- Do ion: wgraj plik `.tif` jako imagery (GeoTIFF); ion sam go kafelkuje dla 3D i 2D.
+- Rzut prostopadły, najwyższa powierzchnia wygrywa; kolor z tekstury (bez oświetlenia i bez mieszania warstw terenu G3).
+  Przy grubych pikselach używa mipmap tekstur, więc nie ma szumu.
+- Gęstość tekstur jest raportowana (`texel_cm_*`); gdy `--gsd` jest drobniejsze niż połowa mediany, program ostrzega,
+  że obraz będzie tylko powiększony. Tekstury terenu G3 w `world.glb` mają 512 px, więc Myrtana poniżej ok. 25 cm/px jest rozmyta.
+- Georeferencja używa tego samego wzoru co GeoJSON (`enu_to_lonlat`), więc obraz leży na punktach warstw. Model 3D w Cesium
+  stoi na prawdziwej płaszczyźnie stycznej, więc na kilku km możliwe jest przesunięcie rzędu krzywizny Ziemi.
