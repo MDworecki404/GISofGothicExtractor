@@ -15,7 +15,7 @@ def test_g3_package_validates(tmp_path, g3_out):
     assert sorrel["name"] == "Szczaw królewski" and sorrel["places"]
     assert any(e["type"] == "character" and e["name"] == "Inog" for e in index["entries"])
     meta = json.loads((pkg / "metadata.json").read_text("utf-8"))
-    assert meta["package"]["version"] == 4
+    assert meta["package"]["version"] == 6
     assert meta["movement_speeds_m_s"] == {"walk": 1.5, "run": 4.0, "sneak": 1.05, "walk_armed": 1.5}
     assert meta["movement_speeds_parameters"]["source"] == "PC_Hero gCCharacterMovement_PS"
     assert meta["guild_names"]["REB"] == "Buntownicy"

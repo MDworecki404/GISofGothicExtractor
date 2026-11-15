@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     mesh = None
     if not args.skip_mesh:
         print("[4/5] world mesh -> world.glb", flush=True)
-        mesh = export_world_glb(world, vfs, args.out / "world.glb", cfg.skip_lod_polygons)
+        mesh = export_world_glb(world, vfs, args.out / "world.glb")
     if not args.skip_models:
         print("[4/5] VOB and item models -> models/*.glb", flush=True)
         mr = export_vob_models(vfs, wd, catalog, script_items, args.out / "models")

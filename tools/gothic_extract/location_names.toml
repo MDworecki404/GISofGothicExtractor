@@ -1,0 +1,132 @@
+# Names and kinds of locations (locations.json). Everything here is OUR mapping, not text of the game:
+# the games name zones with internal codes (oCZoneMusic: OLDCAMP_OC, NEWCAMP_NCI, ...). Every entry with `name`
+# becomes name_source = "derived" and has to be approved by the user; an entry without `name` keeps the code as
+# the name (name_source = "code") and only fixes the kind. `alias` merges the zone into another base name.
+# Zone base name = part before the first "_" without trailing digits (ARCHOLOS2_CIT -> ARCHOLOS).
+# G3 names are taken from the game (stringtable.ini: GO_Enclave_*, MAP_World_*); only what the game lacks is here.
+
+[g1.zones]
+OLDCAMP = { kind = "camp", name = "Stary Obóz" }
+NEWCAMP = { kind = "camp", name = "Nowy Obóz" }
+PSICAMP = { kind = "camp", name = "Obóz Bractwa" }
+FREEMINECAMP = { kind = "camp", name = "Obóz Wolnej Kopalni" }
+BANDITCAMP = { kind = "camp", name = "Obóz bandytów" }
+PIRATE = { kind = "camp", name = "Obóz piratów" }
+OREBARONS = { kind = "building", name = "Zamek Magnatów" }
+INEXTREMO = { kind = "landmark", name = "In Extremo" }
+ORCCITY = { kind = "town", name = "Miasto orków" }
+ORCLOCATION = { kind = "region", name = "Teren orków" }
+ORCGRAVEY = { kind = "landmark", name = "Cmentarzysko orków" }
+OMENTRANCE = { kind = "landmark", name = "Wejście do Starej Kopalni" }
+DEMONTOWER = { kind = "building", name = "Wieża Nekromanty" }
+TOWERDUNGEON = { kind = "cave", name = "Loch wieży" }
+PIRDUNGEON = { kind = "cave", name = "Loch piratów" }
+CASTEL = { kind = "landmark", name = "Ruiny zamku" }
+TEMPLERUIN = { kind = "landmark", name = "Ruiny świątyni" }
+STONEH = { kind = "landmark", name = "Kamienny krąg" }
+TROLLARENA = { kind = "landmark", name = "Arena trolla" }
+FOCUS = { kind = "landmark", name = "Kamień ogniskujący" }
+BEACH = { kind = "region", name = "Plaża" }
+START = { kind = "landmark", name = "Miejsce startu" }
+CAMP = { kind = "camp" }
+KATHEDRALE = { kind = "building", name = "Katedra" }
+SLEEPER = { kind = "building", name = "Komnata Śniącego" }
+
+[g2nk.zones]
+KHORINIS = { kind = "town", name = "Khorinis" }
+OBERSTADT = { kind = "district", name = "Górne Miasto" }
+BORDELL = { kind = "building", name = "Burdel" }
+KASERNE = { kind = "building", name = "Koszary" }
+TAVERNE = { kind = "building", name = "Karczma" }
+GEHEIMERPIER = { kind = "landmark", name = "Tajny pomost" }
+LEUCHTTURM = { kind = "building", name = "Latarnia morska" }
+KLOSTEROUT = { alias = "KLOSTER" }
+KLOSTERIN = { alias = "KLOSTER" }
+KLOSTER = { kind = "building", name = "Klasztor" }
+KLOSTERDUNGEON = { kind = "cave", name = "Podziemia klasztoru" }
+ONARSHOF = { kind = "building", name = "Gospodarstwo Onara" }
+LOBARTSHOF = { kind = "building", name = "Gospodarstwo Lobarta" }
+LESTERTAL = { kind = "region", name = "Dolina Lestera" }
+XARDAS = { kind = "building", name = "Wieża Xardasa" }
+BANDITEN = { kind = "camp", name = "Obóz bandytów" }
+FRIEDHOF = { kind = "landmark", name = "Cmentarz" }
+TROLLSCHLUCHT = { kind = "region", name = "Wąwóz trolli" }
+MAYATEMPEL = { kind = "building", name = "Świątynia Majów" }
+NWPORTAL = { kind = "landmark", name = "Portal" }
+OWPATH = { kind = "landmark", name = "Przełęcz do Górniczej Doliny" }
+NEWCAMP = { kind = "camp", name = "Nowy Obóz" }
+DRAGONLOCATION = { kind = "region", name = "Leże smoka" }
+STONEPLATES = { kind = "landmark", name = "Kamienne tablice" }
+CRYPT = { kind = "cave", name = "Krypta" }
+PIRATES = { kind = "camp", name = "Obóz piratów" }
+GOLDMINE = { kind = "cave", name = "Kopalnia złota" }
+ADDONENTRANCE = { kind = "landmark", name = "Wejście do Doliny" }
+ADDONWORLDENTRANCE = { kind = "landmark", name = "Wejście do Jarkendaru" }
+CANYON = { kind = "region", name = "Kanion" }
+CRYSTALCAVE = { kind = "cave", name = "Jaskinia kryształów" }
+SWAMP = { kind = "region", name = "Bagno" }
+BANDITS = { kind = "camp", name = "Obóz bandytów" }
+RAVEN = { kind = "camp", name = "Siedziba Kruka" }
+SHOWDOWN = { kind = "landmark", name = "Miejsce ostatecznego starcia" }
+ADANOSTEMPLE = { kind = "building", name = "Świątynia Adanosa" }
+TEMPEL = { kind = "building", name = "Świątynia" }
+ENDKAMPF = { kind = "landmark", name = "Miejsce ostatniej walki" }
+GROTTE = { kind = "cave", name = "Grota" }
+
+[archolos.zones]
+ARCHOLOS = { kind = "town", name = "Archolos" }
+CHURCH = { kind = "building", name = "Kościół" }
+SLUMS = { kind = "district", name = "Slumsy" }
+HARBOUR = { kind = "district", name = "Port" }
+COMMANDS = { kind = "building", name = "Komenda" }
+SWAMP = { kind = "region", name = "Bagna" }
+SWAMPSTEMPLE = { kind = "building", name = "Świątynia na bagnach" }
+HAVEN = { kind = "town", name = "Haven" }
+WOLFSDEN = { kind = "camp", name = "Wolfsden" }
+FOREST = { kind = "region", name = "Las" }
+SILBACH = { kind = "town", name = "Silbach" }
+MINEIN = { alias = "MINE" }
+MINE = { kind = "cave", name = "Kopalnia" }
+FARM = { kind = "building", name = "Winnica" }
+MONASTERY = { kind = "building", name = "Klasztor" }
+RENEGATS = { kind = "camp", name = "Obóz renegatów" }
+ARAXOS = { kind = "landmark", name = "Araxos" }
+VARDHAL = { kind = "town", name = "Vardhal" }
+FISHERS = { kind = "town", name = "Osada rybacka" }
+COAST = { kind = "region", name = "Wybrzeże" }
+VOLFZACKECAMP = { kind = "camp", name = "Obóz Volfzacke" }
+
+# Gothic 3: kind of every gCEnclave_PS entity (key = entity name in lower case, without the "Enclave_" prefix).
+# `name` only where the game has no text for the place (stringtable.ini has GO_Enclave_* and MAP_World_* for the rest).
+[g3.enclaves]
+montera = { kind = "town" }
+silden = { kind = "town" }
+trelis = { kind = "town" }
+geldern = { kind = "town" }
+faring = { kind = "town" }
+gotha = { kind = "town" }
+ardea = { kind = "town" }
+reddock = { kind = "town" }
+vangard = { kind = "town" }
+kapdun = { kind = "town" }
+nemora = { kind = "town" }
+okara = { kind = "camp" }
+bakaresh = { kind = "town" }
+benerai = { kind = "town" }
+bensala = { kind = "town" }
+braga = { kind = "town" }
+lago = { kind = "town" }
+morasul = { kind = "town" }
+ishtar = { kind = "town" }
+fireclan = { kind = "camp" }
+wolfclan = { kind = "camp" }
+hammerclan = { kind = "camp" }
+monastery = { kind = "building" }
+alshedim = { kind = "landmark", name = "Al Shedim" }
+morasultemple = { kind = "building", name = "Świątynia w Mora Sul" }
+nrd_orccamp_1 = { kind = "camp", name = "Obóz orków 1" }
+nrd_orccamp_2 = { kind = "camp", name = "Obóz orków 2" }
+nrd_orccamp_3 = { kind = "camp", name = "Obóz orków 3" }
+nrd_orccamp_4 = { kind = "camp", name = "Obóz orków 4" }
+nrd_orccamp_5 = { kind = "camp", name = "Obóz orków 5" }
+nrd_bigmine = { kind = "building", name = "Wielka kopalnia" }

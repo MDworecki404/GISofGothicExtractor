@@ -52,3 +52,44 @@ def test_warns_when_finer_than_texture(tmp_path):
     info = build_ortho(pkg, gsd=0.01, bbox=(0, 0, 1, 1), include_vobs=False, out=tmp_path / "o.tif")
     assert any("tekstur" in w for w in info["warnings"])
     assert info["texel_cm_median"] == pytest.approx(10.0)
+
+
+def test_default_bbox_ignores_stray_vobs(tmp_path):
+    pkg = make_package(tmp_path)
+    far = np.array([[1e6, 0, 0], [1e6 + 1, 0, 0], [1e6 + 1, 0, -1], [1e6, 0, -1]], np.float32)
+    make_glb(pkg / "vobs.glb", pos=far, color=(0, 1, 0))
+    info = build_ortho(pkg, gsd=0.25, bbox=None, include_vobs=True, out=tmp_path / "o.tif")
+    assert (info["width"], info["height"]) == (4, 4)
+
+
+def test_huge_backdrop_vobs_are_skipped(tmp_path):
+    pkg = make_package(tmp_path)
+    cover = np.array([[-5000, 5, -5000], [5000, 5, -5000], [5000, 5, 5000], [-5000, 5, 5000]], np.float32)
+    make_glb(pkg / "vobs.glb", pos=cover, color=(0, 1, 0))
+    info = build_ortho(pkg, gsd=0.25, bbox=None, include_vobs=True, out=tmp_path / "o.tif")
+    data = tifffile.imread(tmp_path / "o.tif")
+    assert (data[..., 0] == 255).all() and (data[..., 1] == 0).all()
+    assert any("tło" in w for w in info["warnings"])
+
+
+def test_water_vobs_opaque_and_helpers_dropped(tmp_path, monkeypatch):
+    from gothic_extract.ortho import __main__ as cli
+    from gothic_extract.ortho.glbmesh import Part
+
+    pkg = make_package(tmp_path)
+    (pkg / "vobs.glb").write_bytes(b"")  # load_parts is replaced below
+    tri = np.array([[0, 1, 2], [0, 2, 3]])
+    pos = np.array([[0, 0, 5], [1, 0, 5], [1, 1, 5], [0, 1, 5]], float)
+    uv = np.zeros((4, 2), np.float32)
+    clear = np.zeros((2, 2, 4), np.uint8)
+    clear[..., 1] = 255  # green and see-through, like the game's water texture
+    water = Part(pos, uv, tri, clear, (1, 1, 1), "G3_Myrtana_Water_Ocean_01_A.xshmat")
+    helper = Part(pos + [0, 0, 1], uv, tri, None, (0.6, 0.6, 0.6), "G3_Myrtana_Water_Sea_01_A.xshmat")
+    depth = Part(pos + [0, 0, 2], uv, tri, None, (0.6, 0.6, 0.6), "G3_Myrtana_Rivermesh_Depth_01_A.xshmat")
+    real_load = cli.load_parts
+    monkeypatch.setattr(cli, "load_parts", lambda p: real_load(p) if p.name == "world.glb" else [water, helper, depth])
+    info = cli.build_ortho(pkg, gsd=0.25, bbox=None, include_vobs=True, out=tmp_path / "o.tif")
+    data = tifffile.imread(tmp_path / "o.tif")
+    from gothic_extract.ortho.__main__ import WATER_COLOR
+    assert (data[..., :3] == np.round(np.array(WATER_COLOR) * 255)).all() and (data[..., 3] == 255).all()  # flat water, no helpers
+    assert any("woda" in w for w in info["warnings"])

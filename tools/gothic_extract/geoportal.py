@@ -10,6 +10,8 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from .descriptions import add_descriptions, item_descriptions
+
 SOURCE_KIND = {"zen": "ground", "script": "script"}
 DASH = "–"
 
@@ -155,6 +157,42 @@ def resolve_model(code: str, catalog: dict, previews: dict[str, str]) -> tuple[s
     return previews[visual], None
 
 
+HIDDEN_WAYPOINT = "TOT"  # where removed/dead NPCs are parked; not a place and not part of the road network
+WAYPOINTS_FILE = "waypoints.json"
+
+
+def compact_waypoints(geojson: dict, game: str, world: str) -> dict | None:
+    """waypoints.geojson of an extraction -> the compact road network of the package (waypoints.json), or None when
+    there are no waypoints (G3).
+
+    nodes: [name, lon, lat, height, under_water 0/1] in the order of the network without the hidden waypoint TOT;
+    edges: [i, j] indices into nodes, i < j, each edge once, no loops, none touching TOT or an unknown name.
+    `name` equals `waypoint` of character_places.geojson and `insert_waypoint` of npcs.geojson.
+    """
+    points = [f for f in geojson["features"]
+              if f["geometry"]["type"] == "Point" and f["properties"]["name"] != HIDDEN_WAYPOINT]
+    if not points:
+        return None
+    index = {f["properties"]["name"]: i for i, f in enumerate(points)}
+    nodes = []
+    for f in points:
+        lon, lat, h = f["geometry"]["coordinates"]
+        nodes.append([f["properties"]["name"], round(lon, 6), round(lat, 6), round(h, 1),
+                      int(bool(f["properties"].get("under_water")))])
+    edges, seen = [], set()
+    for f in geojson["features"]:
+        if f["geometry"]["type"] != "LineString":
+            continue
+        i, j = index.get(f["properties"]["a"]), index.get(f["properties"]["b"])
+        if i is None or j is None or i == j:
+            continue
+        key = (min(i, j), max(i, j))
+        if key not in seen:
+            seen.add(key)
+            edges.append(list(key))
+    return {"version": 1, "game": game, "world": world, "nodes": nodes, "edges": edges}
+
+
 def build_geoportal(src: Path, dst: Path, guild_names: dict[str, str | None] | None = None) -> dict:
     """guild_names: guild code -> Polish name (see guilds.guild_names_pl); the world's metadata gets the codes in use."""
     dst.mkdir(parents=True, exist_ok=True)
@@ -241,6 +279,17 @@ def build_geoportal(src: Path, dst: Path, guild_names: dict[str, str | None] | N
     _write(dst / "character_places.geojson", _fc(place_feats))
 
     copied = []
+    src_meta = _read(src / "metadata.json")
+    wp_path = src / "waypoints.geojson"
+    waypoints = compact_waypoints(_read(wp_path), src_meta["game"], src_meta["world"]) if wp_path.is_file() else None
+    wp_counts = {}
+    (dst / "waypoints.geojson").unlink(missing_ok=True)  # packages of earlier builds
+    if waypoints is not None:
+        _write(dst / WAYPOINTS_FILE, waypoints)
+        copied.append(WAYPOINTS_FILE)
+        wp_counts = {"waypoints": len(waypoints["nodes"]), "waypoint_edges": len(waypoints["edges"])}
+    else:
+        (dst / WAYPOINTS_FILE).unlink(missing_ok=True)
     if (src / "world.glb").exists():
         shutil.copy2(src / "world.glb", dst / "world.glb")
         copied.append("world.glb")
@@ -262,12 +311,13 @@ def build_geoportal(src: Path, dst: Path, guild_names: dict[str, str | None] | N
         "counts": {"search_items": sum(e["type"] == "item" for e in entries),
                    "search_items_with_model": sum(e["type"] == "item" and e["model"] is not None for e in entries),
                    "search_characters": len(char_feats), "items": len(items), "containers": len(containers),
-                   "npcs": len(npc_layer), "character_places": len(place_feats)},
+                   "npcs": len(npc_layer), "character_places": len(place_feats), **wp_counts},
         "files": sorted(["search_index.json", "items.geojson", "containers.geojson", "characters.geojson",
                          "npcs.geojson", "character_places.geojson", "metadata.json", "README.md"] + copied),
     }
     _write(dst / "metadata.json", meta)
     shutil.copy2(Path(__file__).with_name("geoportal_README.md"), dst / "README.md")
+    add_descriptions(dst, item_descriptions(catalog, meta.get("engine", "zengin")), set(catalog))
     return meta["package"]
 
 

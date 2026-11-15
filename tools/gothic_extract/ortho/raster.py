@@ -101,8 +101,9 @@ def _draw_part(part: Part, e0: float, n1: float, gsd: float, width: int, height:
             tv = tri_idx[g][ti]
             if part.texture is not None:
                 t_uv = a[:, None] * uv[tv[:, 0]] + b[:, None] * uv[tv[:, 1]] + c[:, None] * uv[tv[:, 2]]
-                color = _sample(mip, t_uv)
-                opaque = color[:, 3] >= 128
+                finite = np.isfinite(t_uv).all(axis=1)  # broken UVs (NaN) in some objects
+                color = _sample(mip, np.where(finite[:, None], t_uv, 0.0))
+                opaque = (color[:, 3] >= 128) & finite
                 pix, z, color = pix[opaque], z[opaque], color[opaque]
                 color = color.copy()
                 color[:, 3] = 255

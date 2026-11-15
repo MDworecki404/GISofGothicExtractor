@@ -48,3 +48,9 @@ def test_lod_mesh_resolves_to_its_most_detailed_mesh(g3_fs):
     els = load_mesh(g3_fs, "G3_Object_Interact_Alchemy_Table_01.xlmsh")
     assert els and len(els[0].positions) > 0
     assert load_mesh(g3_fs, "nie_ma_takiej.xcmsh") is None
+
+
+def test_inline_material_name_is_not_prefixed_with_the_bytes_before_it(g3_fs):
+    # the scanner used to accept an earlier, shifted header whose length also ends at ".xshmat"
+    els = read_xcmsh(g3_fs.find("G3_Items_Armor_01/G3_ARMOR_SHIELD_TOWER_01.xcmsh"))
+    assert {el.material for el in els} == {"G3_Weapons_Shields_01_A.xshmat"}

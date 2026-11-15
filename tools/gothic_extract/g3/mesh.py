@@ -38,7 +38,8 @@ def _material(data: bytes, i: int, strings: list[str] | None) -> tuple[str, int]
         name = strings[k] if k < len(strings) else ""
         return (name, i + 2) if name.lower().endswith(".xshmat") else None
     raw = data[i + 2:i + 2 + k]
-    if 7 < k < 260 and raw.lower().endswith(b".xshmat"):
+    # printable only: a shifted header whose length also ends at ".xshmat" would swallow the bytes before the name
+    if 7 < k < 260 and raw.lower().endswith(b".xshmat") and all(32 <= c < 127 for c in raw):
         return raw.decode("latin-1"), i + 2 + k
     return None
 

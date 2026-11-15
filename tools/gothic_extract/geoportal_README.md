@@ -1,4 +1,4 @@
-# Dane geoportalu — paczka v4
+# Dane geoportalu — paczka v6
 
 Dane jednego świata gry dla geoportalu: **wyszukać przedmiot, unikatową postać albo zadanie (quest)
 i pokazać, gdzie są**. Paczki wszystkich światów gry buduje jedno polecenie (z `PYTHONPATH=tools`
@@ -9,10 +9,12 @@ python -m gothic_extract.package --game g1              # z istniejącej ekstrak
 python -m gothic_extract.package --game g2nk --extract  # najpierw pełna ekstrakcja każdego świata
 python -m gothic_extract.package --game g3 --extract    # Gothic 3 (osobny czytnik silnika Genome)
 python -m gothic_extract.validate                       # sama walidacja paczek wszystkich gier w dist/
+python -m gothic_extract.descriptions --game all        # tylko dopisanie opisów przedmiotów do gotowych paczek
 ```
 
 `package` robi dla każdego świata: warstwy i indeks (`gothic_extract.geoportal`), questy
-(`gothic_extract.quests_package`, wersja paczki 4) i prędkości ruchu (`gothic_extract.movement_speeds`),
+(`gothic_extract.quests_package`, wersja paczki 6: kolejność etapów), prędkości ruchu (`gothic_extract.movement_speeds`) i lokacje
+(`gothic_extract.locations`, `gothic_extract.g3.locations`, wersja paczki 5),
 a na końcu waliduje paczki. Nie edytuj paczki ręcznie, tylko wygeneruj ją ponownie. Same `geoportal`
 i `quests_package` uruchamiane osobno zostawiają paczkę niedokończoną (`geoportal` zapisuje wersję 3).
 
@@ -32,8 +34,8 @@ i `quests_package` uruchamiane osobno zostawiają paczkę niedokończoną (`geop
 | `engine` | tylko w `g3`: `genome` (silnik Gothic 3) |
 | `world` | nazwa pliku ZEN świata bez rozszerzenia (`NEWWORLD`, `WORLD`…) |
 | `anchor`, `axes`, `gltf_axes` | kotwica WGS84 `{lon, lat, h}` i osie świata (opis wyżej) |
-| `package.version` | 4 |
-| `package.counts` | `search_items`, `search_items_with_model`, `search_characters`, `items`, `containers`, `npcs`, `character_places`, `quests`; zgadzają się z zawartością plików (sprawdza `gothic_extract.validate`) |
+| `package.version` | 6 (5 = bez kolejności etapów i miejsc etapów w `quests.json`, wersja `quests.json` 1; 4 = bez `locations.json`: aplikacja czyta taką paczkę jako „brak lokacji”) |
+| `package.counts` | `search_items`, `search_items_with_model`, `search_characters`, `items`, `containers`, `npcs`, `character_places`, `quests`, `locations`, a tam gdzie jest sieć dróg też `waypoints`, `waypoint_edges`; zgadzają się z zawartością plików (sprawdza `gothic_extract.validate`) |
 | `package.files` | pliki i katalogi paczki (katalog z `/` na końcu) |
 | `guild_names` | kod gildii → polska nazwa **z gry** (tablica `TXT_GUILDS` skryptów), dla gildii występujących w tym świecie; `null`, gdy gra nie ma tekstu. Kody to wartości `guild_name` w `npcs.geojson` i `characters.geojson`. |
 | `movement_speeds_m_s` | prędkości gracza w m/s: `walk`, `run`, `sneak`, `walk_armed`, liczone z pętli animacji szkieletu HUMANS |
@@ -136,17 +138,73 @@ const url = item.model ? MODELS_BASE_URL + item.model : null; // …/models/prev
 Pliki `models/*.glb` (bez `previews/`) to nadal modele **świata** z instancjami: jeden plik zawiera wszystkie
 wystąpienia obiektu w pozycjach świata. Używaj ich do mapy, nie do karty przedmiotu.
 
+## Opis przedmiotu (`description`)
+
+Opcjonalne pole tekstowe (UTF-8, bez spacji na brzegach) przy **każdym rekordzie przedmiotu** z `name`:
+
+- wpisy `type: "item"` w `search_index.json`;
+- `properties` w `items.geojson`;
+- pozycje `contents` w `containers.geojson`;
+- pozycje `inventory` w `npcs.geojson` i `characters.geojson`;
+- `items[]` zestawów w `treasure_sets.json` (tylko G3);
+- `items[]` zadań w `quests.json`.
+
+Wiele przedmiotów ma w grze tę samą ogólną nazwę („Mikstura”, „Zwój”, „Amulet”), a różni je dopiero opis,
+np. `ITPO_HEALTH_01`: `name` „Mikstura”, `description` „Esencja lecznicza”. Pokazuj `description` jako nazwę
+przedmiotu, a `name` zostaw w wyszukiwaniu. Pola **nie ma**, gdy gra nie ma opisu albo jest on taki sam jak `name`;
+`name`, `code` i pozostałe pola się nie zmieniają. Wersja paczki zostaje 4 (pole jest wstecznie zgodne).
+
+- **G1, G2**: `C_ITEM.description` ze skryptów (tytuł przedmiotu w ekwipunku gry).
+- **G3**: tekst `ITEMDESC_<kod>` to opis z dymka („Soczyste jabłko.”), nie nazwa, więc trafia do paczki tylko tam,
+  gdzie nazywa odmianę wspólnej nazwy: nazwę nosi kilka kodów tego samego rodzaju, tekstu nie ma żaden inny przedmiot
+  i brzmi jak nazwa (zawiera pierwsze słowo nazwy, najwyżej 6 słów — „Amulet” → „Amulet magii”) albo opis ma cała
+  rodzina tej nazwy („Mikstura przemiany” → „Przemienia w wilka”). Kropka na końcu jednozdaniowego tekstu jest
+  usuwana. Przepis, zwój, zaklęcie i umiejętność o nazwie swojego produktu oraz rośliny `_Snow` nie są odmianami
+  i zostają z samą nazwą.
+
+Część nazw zostaje wspólna, bo gra ich nie rozróżnia (np. klucze „Klucz do kufra”, runa i zwój tego samego czaru,
+rośliny `_Snow`); wtedy pomaga `category` i `code`. Do istniejącej paczki opisy dopisuje
+`python -m gothic_extract.descriptions --game <gra> [--world <slug>]` (bez ponownej ekstrakcji; zmienia tylko
+pliki JSON/GeoJSON wymienione wyżej).
+
 ## Warstwy GeoJSON
 
 | Plik | Obiekt | Najważniejsze pola |
 |---|---|---|
-| `items.geojson` | przedmiot w świecie | `code`, `name`, `category`, `amount`, `source` (`zen`/`script`), `spot`, `model` |
-| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni, `model` = ścieżka podglądu względem `models/` albo `null` |
+| `items.geojson` | przedmiot w świecie | `code`, `name`, `description`, `category`, `amount`, `source` (`zen`/`script`), `spot`, `model` |
+| `containers.geojson` | skrzynia | `locked`, `key`, `pick_string`, `contents: [{code, name, description?, category, amount}]`; `name` to surowa nazwa z gry (np. `MOBNAME_CHEST`), `visual` = model skrzyni, `model` = ścieżka podglądu względem `models/` albo `null` |
 | `characters.geojson` | unikatowa postać (miejsce pojawienia się) | `code`, `codes`, `name`, `guild_name`, `level`, `chapter`, `inventory`, `game_pos`, `height_m` |
 | `npcs.geojson` | każde wstawienie NPC (także zwykłych i potworów) | `code`, `name`, `guild_name`, `level`, `chapter`, `insert_waypoint` |
 | `character_places.geojson` | miejsce z rutyny postaci | `npc_code`, `npc_name`, `routine`, `is_default`, `waypoint`, `times`, `actions` |
 
 Wszystkie teksty są po polsku, w UTF-8.
+
+### `waypoints.json` — sieć dróg (waynet)
+
+Sieć waypointów świata: po niej gra prowadzi NPC, więc nadaje się do wyznaczania tras po drogach z gry.
+Zwarty JSON (bez spacji, UTF-8), w paczkach wszystkich światów z siecią: G1, G2 NK, Archolos i G3. Pełny
+`waypoints.geojson` zostaje tylko w `output/<gra>/<świat>/` (debug) i nie trafia do paczki. **Źródło sieci różni się
+między grami**: G1, G2 i Archolos mają waynet zapisany w świecie (punkty nazwane, krawędzie z gry), a G3 go nie ma —
+patrz „Różnice Gothic 3” niżej.
+
+```json
+{"version":1,"game":"g2nk","world":"NEWWORLD","nodes":[["NAZWA",lon,lat,height,under_water],…],"edges":[[i,j],…]}
+```
+
+| Pole | Znaczenie |
+|---|---|
+| `version` | wersja formatu, obecnie `1` |
+| `game`, `world` | klucz gry i nazwa ZEN świata (jak w `metadata.json`) |
+| `nodes` | punkty: `[name, lon, lat, height, under_water]`; `lon` i `lat` zaokrąglone do 6 miejsc (~0,1 m), `height` do 0,1 m, `under_water` to `0`/`1`; w kolejności sieci z gry bez `TOT` |
+| `edges` | krawędzie `[i, j]` = indeksy w `nodes`, `i < j`, każda krawędź raz, bez pętli; krawędź jest dwukierunkowa |
+
+- `name` jest taki sam jak `waypoint` w `character_places.geojson` i `insert_waypoint` w `npcs.geojson` — po nim łączy się
+  miejsca z siecią (w G1/G2 i Archolosie). Nazwa jest unikatowa w świecie. Część nazw z tych warstw to freepointy (`FP_*`)
+  i znaczniki (`EVT_*`), których w sieci nie ma. W G3 `insert_waypoint` to nazwa sektora i do sieci nie pasuje.
+- Waypoint `TOT` (miejsce odstawienia usuniętych NPC) i jego krawędzie są usunięte z paczki.
+- Nie ma `game_pos`, `id` ani `source`; linię krawędzi składa się z pozycji dwóch węzłów.
+- Sieć nie musi być spójna: `gothic_extract.validate` podaje liczbę składowych i liczbę węzłów w największej (Khorinis:
+  2952 z 2958). Węzły poza największą składową są nieosiągalne po krawędziach z reszty sieci.
 
 ## `quests.json` — zadania
 
@@ -160,14 +218,103 @@ Wpis `type: "quest"` w `search_index.json` jest skrócony (`id`, `code`, `name`,
 | `section` | `mission` albo `note` |
 | `chapter`, `chapter_source` | rozdział, który zadanie wymaga (`function`/`condition`), albo `null` |
 | `giver`, `giver_certainty`, `giver_candidates` | zleceniodawca (`{code, name}`) albo lista kandydatów |
-| `order` | `"script"`: etapy w kolejności występowania w skryptach, nie w kolejności gry |
-| `stages` | etapy: `kind` (`create`/`entry`/`status`/`close`), `text`, `status`, `function`, `sources` (dialog / użycie przedmiotu), `conditional` |
+| `order` | `"dependency"`: co najmniej 80 % etapów ma `requires_source` inne niż `script_order`, więc `requires`/`level` nadają się do narysowania trasy; `"script"`: etapy są w kolejności występowania w skryptach (nie gry) i aplikacja nie powinna rysować trasy |
+| `stages_with_place` | liczba etapów z `place` ≠ `null` |
+| `stages` | etapy: `kind` (`create`/`entry`/`status`/`close`), `text`, `status`, `function`, `sources` (dialog / użycie przedmiotu), `conditional`, a od v6 kolejność i miejsce (niżej) |
 | `characters`, `items` | postacie i przedmioty zadania z `role` (w G3 także `target`) i `certainty`; `in_index: true` ⇒ `id` wskazuje wpis w `search_index.json`, inaczej `id: null` |
 | `rewards` | `xp` i `xp_certainty` |
 | `worlds` | wszystkie światy gry (nazwy ZEN), w których zadanie ma udział; zadanie wielo-światowe jest w paczce **każdego** z nich pod tym samym `id`, a `places` zawiera tylko miejsca z danego świata |
 | `places` | miejsca na mapie: jak w indeksie (`kind`, `lon`, `lat`, `h`, `ref`…) plus `role` (`giver`/`target`/`stage`), `npc_code`, `certainty` |
 
 Zadanie, w którym żaden świat nie ma udziału, nie trafia do żadnej paczki.
+
+### Kolejność i miejsce etapów (quests.json v2, paczka v6)
+
+Każdy etap ma dodatkowo (stare pola bez zmian):
+
+| Pole | Znaczenie |
+|---|---|
+| `requires` | `seq` etapów **tego** zadania, które muszą zajść wcześniej (rosnąco; `[]` = początek). To redukcja przechodnia: nie ma krawędzi, którą da się wyprowadzić z innych. Graf nie ma cykli |
+| `requires_source` | skąd to wiemy: `condition` (odczytane z warunków), `dialog_order` (heurystyka), `script_order` (zgadywanie) |
+| `level` | głębokość: 0 = start, inaczej 1 + największy `level` z `requires` (najdłuższa ścieżka) |
+| `alternative_group` | litera (`"A"`, `"B"`…) grupy etapów **wzajemnie się wykluczających**, albo `null`. Etapy tej samej grupy nie zajdą oba |
+| `place` | gdzie gracz ma być, by etap zaszedł, albo `null`: `{lon, lat, h, label, npc_code, waypoint, source, certainty}` |
+| `hours` | przedziały `[od, do]` (`"HH:MM"`) z `Wld_IsTime` w warunku dialogu; `[]` = bez ograniczenia (tylko G1/G2/Archolos) |
+
+`requires_source` — co jest pewne, a co nie:
+
+- **`condition` (pewne w granicach analizy)**: funkcja warunku dialogu (`C_INFO.condition`, G1/G2/Archolos) jest
+  wykonywana symbolicznie na bajtkodzie (bez uruchamiania VM). Z warunku czytamy `Npc_KnowsInfo(hero, DIA_X)`,
+  `MIS_<zadanie> == LOG_*`, `Npc_HasItems`, `Kapitel`, `Npc_IsDead`, `Wld_IsTime`, zmienne-flagi i `&&`/`||`/`!`;
+  alternatywy (`||`) dają wspólną część wymagań. Atom wskazuje etap, jeśli dialog/funkcja, która go spełnia, jest etapem
+  tego zadania: dialog poznany (`KnowsInfo`), stan zadania (`LOG_RUNNING` ⇒ etap `RUNNING`), flaga przypisana przez
+  funkcję etapu (z dokładnością do bloku `if`; gdy flagę ustawia też coś poza zadaniem, nie ma krawędzi), przedmiot
+  wydany graczowi w etapie. Dochodzą `if` wokół samego wpisu do dziennika (to jedyne źródło dla zadań Archolosa
+  wyzwalanych w `EVENTSMANAGER_*`). **`requires: []` przy `condition`** znaczy: warunek jest w pełni zrozumiany i
+  żaden jego element nie wskazuje innego etapu tego zadania (np. tylko rozdział, godzina, inne zadanie) — to nie
+  jest „nie wiadomo”. G3: `Parent` dialogu i `CondPlayerKnows` (zdarzenie, które podnosi `SetGameEvent` w innych
+  dialogach); dialog startowy (`ConditionType` 6) bez takich warunków to początek.
+- **`dialog_order` (heurystyka)**: warunków nie dało się rozstrzygnąć; wymagany jest etap poprzedniego dialogu tej
+  samej postaci w zadaniu (niższe `C_INFO.nr`). Tylko G1/G2/Archolos.
+- **`script_order` (zgadywanie)**: brak danych (etap z wyzwalacza bez warunku, warunek odwołuje się do funkcji
+  pomocniczej lub zmiennej bez źródła, G3 bez jawnego warunku); `requires` = poprzedni etap w kolejności skryptu
+  (poprzedni z innej funkcji), `[]` dla pierwszego.
+
+`alternative_group` powstaje tylko z wzajemnych wykluczeń: etap A wymaga `!Npc_KnowsInfo(B)` lub flagi `== FALSE`
+ustawianej w B, a B odwrotnie względem A.
+
+`place` (G1/G2/Archolos i G3): dla etapu z dialogiem tej jednej postaci — jej miejsce w tym świecie. Postać z rutynami:
+domyślne rutyny (`is_default`) bez snu; z godzin dialogu, jeśli są, inaczej ta, która obejmuje południe
+(`source: "routine"`); postać bez rutyn z dokładnie jednym miejscem pojawienia się: `source: "spawn"`. `certainty`:
+`only` = był jeden kandydat, `default` = wybrano pierwszego z kilku. `waypoint` = węzeł z rutyny/pojawienia się,
+`label` = „<imię>: <godziny>”. **Rutyna jest domyślna**: zmiany rutyn w trakcie gry (`B_StartOtherRoutine`) nie są
+śledzone. Etapy użycia przedmiotu, wyzwalane skryptem i dialogi gracza (`PC_HERO`) nie mają `place`.
+
+## `locations.json` — lokacje i przejścia między światami
+
+Trzeci rodzaj wpisu obok przedmiotów i postaci: **nazwane miejsca** (obozy, miasta, budynki, jaskinie, regiony,
+punkty orientacyjne) i **przejścia między światami**. Zwarty JSON (UTF-8, bez BOM), w każdej paczce v5; lokacje są
+posortowane po `kind` (kolejność poniżej), potem po `id`.
+
+```json
+{"version":1,"game":"g2nk","world":"NEWWORLD","locations":[
+ {"id":"location:KHORINIS","kind":"town","name":"Khorinis","name_source":"derived","code":"KHORINIS",
+  "center":[lon,lat,h],"radius_m":150.3,"polygon":null,"waypoint":"NW_CITY_MAINSTREET_01"},
+ {"id":"location:passage:NW_2_ADDON_CHANGELEVEL","kind":"passage","name":"Przejście do: Jarkendar",
+  "name_source":"derived","code":"NW_2_ADDON_CHANGELEVEL","center":[lon,lat,h],"radius_m":3.2,"polygon":null,
+  "waypoint":"NW_TROLLAREA_PORTAL_10",
+  "passage":{"to_world":"g2nk/jarkendar","to_level":"ADDON\ADDONWORLD.ZEN","arrival":[lon,lat,h]}}]}
+```
+
+| Pole | Znaczenie |
+|---|---|
+| `id` | `location:<KOD>`; kilka rozłącznych miejsc o jednym kodzie: `-1`, `-2`… (od zachodu); przejścia: `location:passage:<nazwa wyzwalacza>`. Stabilny, unikatowy w świecie |
+| `kind` | `camp`, `town`, `district`, `building`, `cave`, `region`, `landmark`, `passage` (w tej kolejności sortowania). **Rodzaj to nasza ocena**, nie dana z gry |
+| `name` | nazwa po polsku |
+| `name_source` | `game` = tekst z gry; `derived` = nasza nazwa z mapowania `location_names.toml` (do zatwierdzenia); `code` = tylko kod z gry (`name` = `code`) |
+| `code` | kod z gry: nazwa strefy bez numeru i przyrostka (`OLDCAMP_OC` → `OLDCAMP`), nazwa wyzwalacza przejścia, nazwa encji G3; `null` dla przejścia bez nazwy |
+| `center` | `[lon, lat, h]` WGS84 (jak reszta paczki; `h` w metrach nad elipsoidą) |
+| `radius_m` | przybliżony zasięg: promień okręgu opisanego na prostokącie strefy (albo na sumie prostokątów); `null` dla punktu |
+| `polygon` | obrys `[[lon, lat], …]` (zamknięty pierścień) — tylko gdy gra go daje: prostokąt pojedynczej strefy G1/G2 albo wielokąt areny G3; suma kilku stref nie ma uczciwego obrysu, więc `null` |
+| `waypoint` | nazwa najbliższego węzła `waypoints.json` w promieniu 150 m, inaczej `null` |
+| `passage` | tylko `kind = passage`: `to_world` = `<gra>/<slug>` katalogu docelowego świata w paczkach albo `null` (świat poza paczką); `to_level` = surowa wartość `levelName` z gry; `arrival` = `[lon, lat, h]` obiektu `startVobName` w świecie docelowym albo `null` (świat poza paczką, pusta nazwa albo gra nie ma w nim takiego obiektu) |
+
+Źródła (G1, G2 NK, Archolos — ZEN świata):
+
+- **Przejścia**: każdy `oCTriggerChangeLevel` to jedna lokacja, `name` = „Przejście do: <nazwa świata docelowego>” (nazwa
+  z `games.toml`; świat spoza paczki: nazwa pliku, np. „Przejście do: ORCCITY”). `name_source` przejścia to zawsze
+  `derived` (gra nie ma tekstu przejścia). Pozycja i `radius_m` z pola wyzwalacza.
+- **Miejsca**: strefy muzyczne `oCZoneMusic` (jedyne strefy z nazwą i zasięgiem). Strefy jednej nazwy bazowej, które się
+  stykają (margines 5 m), to jedno miejsce (obóz ma kilka stref), odległe — osobne miejsca. Prefiksy waypointów, punkty
+  `FP_*` i punkty startowe nie są lokacjami (waypoint służy tylko do pola `waypoint`).
+
+Gothic 3 (`gothic_extract.g3.locations`): osady z encji `gCEnclave_PS` (nazwa z tekstów gry `GO_Enclave_*` i
+`MAP_World_*` → `game`; reszta z mapowania → `derived`) oraz areny (`gCNavZone_PS` + `gCArena_PS`, z wielokątem, nazwa
+`derived`). G3 ma jeden świat, więc nie ma przejść. Strefy pogody `eCWeatherZone_PS` (Cave, Dungeon…) to oświetlenie, nie
+miejsca.
+
+`gothic_extract.validate` sprawdza: unikatowe `id`, kolejność, `kind` i `name_source`, skończone współrzędne, `waypoint`
+istnieje w `waypoints.json`, `passage` tylko przy `kind = passage`, `to_world` istnieje wśród paczek, `counts.locations`.
 
 ## Rozmiar
 
@@ -206,6 +353,16 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
   więc jest jedna paczka (`dist/g3/myrtana`). Nazwa „Myrtana” jest robocza.
 - **Kody** przedmiotów i postaci mają oryginalną wielkość liter z gry (`It_Plant_Perm_01`, `Inog`), nie same wielkie
   litery jak w G1/G2. Polska nazwa pochodzi z tekstu gry `FO_<kod>`.
+- **Sieć dróg**: G3 nie ma waynetu (0 punktów w świecie), więc `waypoints.json` jest zbudowany z encji nawigacyjnych
+  sektorów `*NavZones_01` regionu Myrtana (`gCNavZone_PS` = wielokąt strefy, `gCNavPath_PS` = łamana drogi między dwiema
+  strefami). Format ten sam co w G1/G2, ale to **przybliżenie, nie sieć z gry**:
+  - węzły `NAVPATH_<n>_<i>` = punkt `i` ścieżki `n`, krawędzie = kolejne punkty łamanej;
+  - węzły `NAVZONE_<n>_<A|B>` = miejsce, w którym ścieżka `n` styka się ze strefą A lub B; połączone z najbliższym
+    punktem ścieżki, a w obrębie jednej strefy wszystkie takie węzły są połączone prostymi odcinkami (odcinek może
+    wyjść poza obrys strefy);
+  - ścieżki bez rozpoznanej strefy (identyfikator strefy spoza wczytanych plików) są pominięte;
+  - nazwy węzłów nie występują w innych warstwach (brak powiązania z `waypoint`/`insert_waypoint`), `under_water`
+    zawsze `0`; sieć nie jest spójna (liczba składowych w raporcie `validate`).
 - **Rozdziały**: G3 ich nie ma, `chapter` jest zawsze `null`.
 - **Gildie**: G3 nie ma gildii. `guild_name` to stronnictwo postaci (`gEPoliticalAlignment`): `ORC` (Orkowie),
   `NRD` (Barbarzyńcy), `REB` (Buntownicy), `MID` (Druid), `ASS` (Asasyn), `NOM` (Koczownicy) — polskie nazwy z ekranu
@@ -229,7 +386,7 @@ Układ plików, osie i kotwica są takie same we wszystkich paczkach; światy og
   `["G3_WORLD_01"]`). `name` = tytuł z dziennika, `section` = `mission`, `chapter` = `null`. Zleceniodawca to postać,
   której dialog rozpoczyna zadanie; gdy takich dialogów jest kilka u różnych postaci — `giver_candidates`.
   `stages` to dialogi zadania (`kind: "entry"`, `text` = pierwsza kwestia dialogu, `sources` = dialog i postać),
-  w kolejności z danych gry (`order: "script"`), bez statusów. `characters`: `giver`/`giver_candidate`, `stage`
+  w kolejności `SortID` z danych gry (to kolejność pisania; zależności tylko z `Parent`/`CondPlayerKnows`, patrz „Kolejność i miejsce etapów”), bez statusów. `characters`: `giver`/`giver_candidate`, `stage`
   (inne postacie z dialogami zadania) i **`target`** (cel zadania: kogo zabić, pokonać, przyprowadzić, komu
   zanieść). `items`: `handover` (co oddać) i `reward` (co dostaje gracz). `rewards.xp` = doświadczenie za zadanie.
 - **Teren** (`world.glb`): cały kontynent (komórki terenu Myrtany, Nordmaru i Varantu, ~2,4 mln trójkątów, ~150 MB),

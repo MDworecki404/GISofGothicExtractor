@@ -45,6 +45,16 @@ class _Builder:
         return {"code": code, "name": d.name, "category": d.category}
 
 
+def write_waypoints(out_dir: Path, b: "_Builder", wd: WorldData) -> None:
+    """waypoints.geojson: a Point per waypoint (`source`: "zen" = from the world's way net, "navzones" = G3 nav
+    paths and zones) and a LineString per edge."""
+    wp_pos = {w.name: w.pos for w in wd.waypoints}
+    wps = [b.point(w.pos, {"id": f"wp-{w.name}", "name": w.name, "under_water": w.under_water,
+                           "source": w.source}) for w in wd.waypoints]
+    wps += [b.line(wp_pos[e.a], wp_pos[e.b], {"a": e.a, "b": e.b}) for e in wd.edges]
+    _write(out_dir / "waypoints.geojson", _fc(wps))
+
+
 def write_outputs(out_dir: Path, cfg: GameConfig, world_name: str, wd: WorldData, catalog: dict[str, ItemDef],
                   npcs: list[NpcRec], script_items: list[ItemRec], mesh: MeshStats | None) -> Report:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -102,11 +112,7 @@ def write_outputs(out_dir: Path, cfg: GameConfig, world_name: str, wd: WorldData
     ]
     _write(out_dir / "vobs.geojson", _fc(vobs))
 
-    wp_pos = {w.name: w.pos for w in wd.waypoints}
-    wps = [b.point(w.pos, {"id": f"wp-{w.name}", "name": w.name, "under_water": w.under_water, "source": "zen"})
-           for w in wd.waypoints]
-    wps += [b.line(wp_pos[e.a], wp_pos[e.b], {"a": e.a, "b": e.b}) for e in wd.edges]
-    _write(out_dir / "waypoints.geojson", _fc(wps))
+    write_waypoints(out_dir, b, wd)
 
     fps = [b.point(f.pos, {"id": f"fp-{k}", "name": f.name, "source": "zen"}) for k, f in enumerate(wd.freepoints)]
     _write(out_dir / "freepoints.geojson", _fc(fps))

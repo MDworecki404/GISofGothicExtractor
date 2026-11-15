@@ -1,4 +1,4 @@
-"""Add quests to a geoportal package (v4): quests.json, `type: "quest"` entries in search_index.json, metadata counts.
+"""Add quests to a geoportal package (v6): quests.json, `type: "quest"` entries in search_index.json, metadata counts.
 
 Run after gothic_extract.geoportal has built the package:
 python -m gothic_extract.quests_package --game g2nk --pkg dist/g2nk/khorinis --out-root output/g2nk
@@ -8,6 +8,7 @@ left out of every package and listed on stdout.
 """
 import argparse
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -17,7 +18,8 @@ from .quests import extract_quests
 from .script_vm import make_vm
 
 SECTION_LABEL = {"mission": "Misja", "note": "Notatka"}
-PACKAGE_VERSION = 4
+PACKAGE_VERSION = 6  # 6: stage order and places (quests.json version 2); 4 introduced quests
+QUESTS_VERSION = 2
 MAX_SPAWNS = 10  # spawn places listed for a non-unique character (guards, bandits...)
 _TARGET_ROLES = {"insert", "routine", "target"}  # target: G3 quest targets (.quest DeliveryEntities)
 
@@ -105,6 +107,78 @@ def quest_places(q: dict, idx: PackageIndex) -> list[dict]:
     return places
 
 
+_WINDOW = re.compile(r"(\d{2}):(\d{2})\u2013(\d{2}):(\d{2})")
+
+
+def _minutes(h: str, m: str) -> int:
+    return int(h) * 60 + int(m)
+
+
+def _windows(label: str) -> list[tuple[int, int]] | None:
+    """Time windows of a routine place label ("07:20\u201301:20", "[HOME] 08:00\u201309:00, 10:00\u201322:10"); None = all day."""
+    found = [(_minutes(a, b), _minutes(c, d)) for a, b, c, d in _WINDOW.findall(label)]
+    return found or None
+
+
+def _covers(windows: list[tuple[int, int]] | None, t: int) -> bool:
+    if windows is None:
+        return True
+    return any(a <= t < b if a <= b else t >= a or t < b for a, b in windows)
+
+
+def _overlaps(windows: list[tuple[int, int]] | None, want: list[tuple[int, int]]) -> bool:
+    """Does the place's schedule share a minute with any wanted window (checked on a 10-minute grid)?"""
+    return any(_covers(windows, t % 1440) for a, b in want for t in range(a, b if a <= b else b + 1440, 10))
+
+
+def _waypoint(p: dict) -> str | None:
+    if p["kind"] == "routine":
+        return p["ref"].split(":", 2)[-1]
+    m = re.search(r"\(([^()]+)\)\s*$", p.get("label", ""))
+    return m.group(1) if m else None
+
+
+def stage_place(st: dict, idx: "PackageIndex") -> dict | None:
+    """Where the player has to be for the stage to happen: for a dialog, the dialog NPC's place in this world.
+    A unique character has routine places: the default routines (not sleeping) that fit the dialog's hours
+    (`Wld_IsTime` in its condition), else the one that covers midday. A character without routines has spawn
+    places; with exactly one it is the place. Other NPCs, item use and script triggers have no place."""
+    npcs = sorted({src["npc"] for src in st["sources"] if src["type"] == "dialog" and src.get("npc")
+                   and src["npc"] not in ("PC_HERO", "HERO")})
+    if len(npcs) != 1:
+        return None
+    code = npcs[0]
+    entry = idx.char_by_code.get(code)
+    places = entry["places"] if entry else [_spawn_place(f) for f in idx.spawns.get(code, [])]
+    routines = [p for p in places if p["kind"] == "routine" and p.get("is_default")]
+    awake = [p for p in routines if "TA_SLEEP" not in p.get("actions", [])] or routines
+    name = next((src.get("npc_name") for src in st["sources"] if src.get("npc") == code), None) or code
+    if awake:
+        want = [(_minutes(*a.split(":")), _minutes(*b.split(":"))) for a, b in st.get("hours", [])]
+        fits = [p for p in awake if want and _overlaps(_windows(p["label"]), want)]
+        noon = [p for p in awake if _covers(_windows(p["label"]), 12 * 60)]
+        pick = (fits or noon or awake)[0]
+        candidates = len(fits or noon or awake)
+        source = "routine"
+    elif len(places) == 1:
+        pick, candidates, source = places[0], 1, "spawn"
+    else:
+        return None
+    return {"lon": pick["lon"], "lat": pick["lat"], "h": pick["h"], "label": f"{name}: {pick['label']}",
+            "npc_code": code, "waypoint": _waypoint(pick), "source": source,
+            "certainty": "only" if candidates == 1 else "default"}
+
+
+def add_stage_places(q: dict, idx: "PackageIndex") -> int:
+    """`place` on every stage (None when unknown) and `stages_with_place` on the quest; returns the count."""
+    n = 0
+    for st in q["stages"]:
+        st["place"] = stage_place(st, idx)
+        n += st["place"] is not None
+    q["stages_with_place"] = n
+    return n
+
+
 def link_characters_items(q: dict, idx: PackageIndex) -> tuple[list[dict], list[dict]]:
     chars = []
     for c in q["characters"]:
@@ -124,7 +198,10 @@ def build_world_quests(quests: list[dict], world: str, worlds, idx: PackageIndex
         if world not in ws:
             continue
         chars, items = link_characters_items(q, idx)
-        out.append({**q, "worlds": ws, "characters": chars, "items": items, "places": quest_places(q, idx)})
+        built = {**q, "worlds": ws, "characters": chars, "items": items, "places": quest_places(q, idx),
+                 "stages": [dict(st) for st in q["stages"]]}
+        add_stage_places(built, idx)
+        out.append(built)
     return out
 
 
@@ -155,10 +232,10 @@ def build(game: str, pkg: Path, out_root: Path, quests: list[dict] | None = None
     unassigned = [] if single_world else [q for q in quests if not quest_worlds(q, worlds)]
     idx = PackageIndex(pkg)
     mine = build_world_quests(quests, world, worlds, idx, single_world)
-    _write(pkg / "quests.json", {"version": 1, "game": game, "world": world, "quests": mine})
+    _write(pkg / "quests.json", {"version": QUESTS_VERSION, "game": game, "world": world, "quests": mine})
     _write(pkg / "search_index.json", {"version": idx.version, "entries": idx.entries + [search_entry(q) for q in mine]})
     package = meta["package"]
-    package["version"] = PACKAGE_VERSION  # 4: quests (quests.json, type "quest" in the search index)
+    package["version"] = max(package.get("version", 0), PACKAGE_VERSION)  # 6: stage order and places in quests.json (4: quests)
     package["counts"]["quests"] = len(mine)
     package["files"] = sorted(set(package["files"]) | {"quests.json"})
     _write(pkg / "metadata.json", meta)

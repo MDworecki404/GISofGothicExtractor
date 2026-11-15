@@ -81,3 +81,10 @@ def test_coarse_pixels_use_mipmap_instead_of_aliasing():
     q = quad(0, 0, 8, 8, 0, uv=uv_by_position(0, 0, 8, 8, 8, 8), texture=checker)  # 1 m texels
     out = render_block([q], 0, 8, 4.0, 2, 2)  # 4 m pixels
     assert np.abs(out[..., :3].astype(int) - 127).max() <= 1
+
+
+def test_non_finite_uv_does_not_crash_and_draws_nothing():
+    tex = np.full((2, 2, 4), 255, np.uint8)
+    bad = np.full((4, 2), np.nan, np.float32)
+    out = render_block([quad(0, 0, 2, 2, 0, uv=bad, texture=tex)], 0, 2, 1.0, 2, 2)
+    assert (out == 0).all()

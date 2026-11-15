@@ -7,7 +7,9 @@ u32 1, u32 size of all mip levels, u32 0, then the mip levels, largest first. Th
 DDS header and decoded by Pillow.
 """
 import io
+import re
 import struct
+from dataclasses import dataclass
 
 from PIL import Image
 
@@ -24,27 +26,87 @@ def _strings(data: bytes) -> tuple[list[str] | None, int]:
     return None, 0
 
 
-def material_texture(data: bytes | None) -> str | None:
-    """File name (.ximg) of the material's diffuse texture, or None."""
-    if not data:
-        return None
+_WATER_SHADERS = ("eCShaderRiver", "eCShaderOcean")
+WATER_COLOR = (0.16, 0.33, 0.42, 0.7)  # RGBA of water, which the game draws with a shader instead of a colour texture
+_ALPHA_MODE = {0: "OPAQUE", 1: "MASK"}  # eCShader*.BlendMode; 2 = alpha blend, 7 = additive (both BLEND)
+
+
+@dataclass
+class MaterialInfo:
+    texture: str | None  # .ximg of the diffuse sampler; None for water, whose samplers are normal maps
+    shader: str = ""
+    blend_mode: int = 0
+    mask_reference: int = 0  # alpha-test threshold, 0-255
+
+    @property
+    def is_water(self) -> bool:
+        return self.shader in _WATER_SHADERS
+
+    @property
+    def hidden(self) -> bool:
+        """Opaque river/ocean shader: the depth and far-sea helper meshes, never drawn by the game."""
+        return self.is_water and self.blend_mode == 0
+
+    @property
+    def alpha_mode(self) -> str:
+        """glTF alphaMode. In .ximg the alpha channel is often a detail map, so only the shader decides."""
+        return _ALPHA_MODE.get(self.blend_mode, "BLEND")
+
+
+def _objects(data: bytes):
     strings, i = _strings(data)
-    paths = []
     while (j := data.find(_OBJ_HEAD, i)) != -1:
         try:
             obj = read_property_object(Reader(data, j), strings)
         except (FormatError, IndexError, UnicodeDecodeError):
             i = j + 1
             continue
-        if obj is not None and "ImageFilePath" in obj.props and isinstance(obj.props["ImageFilePath"].value, str):
-            if obj.props["ImageFilePath"].value:
-                paths.append(obj.props["ImageFilePath"].value)
+        if obj is not None:
+            yield obj
         i = j + 1  # samplers sit inside the shader object: keep scanning inside it
-    if not paths:
+
+
+def _prop(obj, name: str, kind: type):
+    p = obj.props.get(name)
+    return p.value if p is not None and isinstance(p.value, kind) else None
+
+
+def material_info(data: bytes | None) -> MaterialInfo | None:
+    """Diffuse texture and blending of an .xshmat (shader: eCShader* with BlendMode and MaskReference)."""
+    if not data:
         return None
-    path = next((p for p in paths if "diffuse" in p.lower()), paths[0])
-    name = path.replace("\\", "/").split("/")[-1]
-    return name.rsplit(".", 1)[0] + ".ximg"
+    info = MaterialInfo(None)
+    paths = []
+    for obj in _objects(data):
+        if obj.cls.startswith("eCShader") and "BlendMode" in obj.props:
+            info.shader = obj.cls
+            info.blend_mode = int(_prop(obj, "BlendMode", (int, float)) or 0)
+            info.mask_reference = int(_prop(obj, "MaskReference", (int, float)) or 0)
+        path = _prop(obj, "ImageFilePath", str)
+        if path:
+            paths.append(path)
+    if not paths:  # an older class version the property reader cannot parse: the editor paths are plain text
+        paths = [m.decode("latin-1") for m in re.findall(rb"[\w /.-]+\.tga", data, re.I)]
+    if paths and not info.is_water:
+        path = next((p for p in paths if "diffuse" in p.lower()), paths[0])
+        info.texture = path.replace("\\", "/").split("/")[-1].rsplit(".", 1)[0] + ".ximg"
+    return info
+
+
+def apply_alpha_mode(mat, info: "MaterialInfo | None", has_alpha: bool) -> None:
+    """Set a glTF material's alphaMode from its shader; without one (actors name a .ximg) from the image's alpha."""
+    mode = info.alpha_mode if info is not None else ("MASK" if has_alpha else "OPAQUE")
+    if mode == "MASK":
+        cutoff = info.mask_reference / 255 if info is not None and info.mask_reference else 0.5
+        mat.alphaMode, mat.alphaCutoff, mat.doubleSided = "MASK", cutoff, True
+    elif mode == "BLEND":
+        mat.alphaMode, mat.doubleSided = "BLEND", True
+
+
+def material_texture(data: bytes | None) -> str | None:
+    """File name (.ximg) of the material's diffuse texture, or None."""
+    info = material_info(data)
+    return info.texture if info else None
 
 
 def _dds(width: int, height: int, fourcc: bytes, top: bytes) -> bytes:
@@ -53,8 +115,9 @@ def _dds(width: int, height: int, fourcc: bytes, top: bytes) -> bytes:
     return b"DDS " + header + pixel_format + struct.pack("<5I", 0x1000, 0, 0, 0, 0) + top
 
 
-def ximg_to_png(data: bytes, max_size: int = 512) -> tuple[bytes, bool]:
-    """(PNG bytes, has transparent pixels) of the largest mip level, scaled down to max_size."""
+def ximg_to_png(data: bytes, max_size: int = 512, keep_alpha: bool = True) -> tuple[bytes, bool]:
+    """(PNG bytes, PNG has transparent pixels) of the largest mip level, scaled down to max_size.
+    keep_alpha=False drops the alpha channel (materials whose shader is opaque)."""
     g = data.find(b"G3IMG")
     if g < 0:
         raise FormatError("not a G3IMG image")
@@ -69,7 +132,7 @@ def ximg_to_png(data: bytes, max_size: int = 512) -> tuple[bytes, bool]:
     img = Image.open(io.BytesIO(_dds(width, height, fourcc, top)))
     img.load()
     img = img.convert("RGBA")
-    has_alpha = img.getextrema()[3][0] < 255
+    has_alpha = keep_alpha and img.getextrema()[3][0] < 255
     if not has_alpha:
         img = img.convert("RGB")
     if max(img.size) > max_size:

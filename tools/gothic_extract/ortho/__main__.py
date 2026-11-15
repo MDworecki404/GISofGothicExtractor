@@ -13,6 +13,9 @@ from .glbmesh import load_parts, texel_size_cm
 from .raster import render_block
 
 MAX_PIXELS = 2_000_000_000
+WATER_HELPERS = ("water_sea", "rivermesh_depth")  # untextured depth/far-sea meshes that z-fight with the terrain
+WATER_COLOR = (0.24, 0.38, 0.47)  # flat water colour of the orthophoto
+MAX_VOB_EXTENT_M = 1000.0  # wider "objects" are backdrops (G3: Landscape_Border, 4 km) and would cover the terrain
 
 
 def check_size(width: int, height: int, bbox_given: bool, limit: int = MAX_PIXELS) -> None:
@@ -21,25 +24,49 @@ def check_size(width: int, height: int, bbox_given: bool, limit: int = MAX_PIXEL
                          "Zawęź obszar przez --bbox albo zwiększ --gsd.")
 
 
+def _water(parts: list) -> tuple[list, int]:
+    """Drop untextured water helper meshes; paint water a flat colour (its texture is tinted by the game's shader)."""
+    kept, changed = [], 0
+    for p in parts:
+        name = p.name.lower()
+        if p.texture is None and any(h in name for h in WATER_HELPERS):
+            changed += 1
+            continue
+        if "water" in name:
+            p.texture, p.color, p.mips = None, WATER_COLOR, None
+            changed += 1
+        kept.append(p)
+    return kept, changed
+
+
 def build_ortho(pkg: Path, gsd: float, bbox: tuple[float, float, float, float] | None, include_vobs: bool,
                 out: Path | None) -> dict:
     anchor = json.loads((pkg / "metadata.json").read_text("utf-8"))["anchor"]
     parts = load_parts(pkg / "world.glb")
-    if include_vobs:
-        parts += load_parts(pkg / "vobs.glb")
     bbox_given = bbox is not None
-    if bbox is None:
+    if bbox is None:  # from the world mesh only: vobs include stray objects far outside the playable area
         if not parts:
             raise ValueError("Paczka nie ma geometrii.")
         lo = np.min([p.pos[:, :2].min(axis=0) for p in parts], axis=0)
         hi = np.max([p.pos[:, :2].max(axis=0) for p in parts], axis=0)
         bbox = (float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]))
+    warnings = []
+    if include_vobs:
+        vobs = load_parts(pkg / "vobs.glb")
+        kept = [p for p in vobs if np.isfinite(p.pos).all()
+                and (p.pos[:, :2].max(axis=0) - p.pos[:, :2].min(axis=0)).max() <= MAX_VOB_EXTENT_M]
+        if len(kept) < len(vobs):
+            warnings.append(f"pominięto {len(vobs) - len(kept)} części vobów jako tło lub błędną geometrię "
+                            f"(szersze niż {MAX_VOB_EXTENT_M:g} m albo z NaN)")
+        kept, water = _water(kept)
+        if water:
+            warnings.append(f"woda: {water} części vobów wody pominięto (pomocnicze) lub namalowano jednolitym kolorem")
+        parts += kept
     grid = make_grid(bbox, gsd, anchor["lon"], anchor["lat"])
     check_size(grid.width, grid.height, bbox_given=bbox_given)
     out = out or pkg / "ortho" / f"{pkg.name}_{gsd * 100:g}cm.tif"
 
     texels = [t for t in (texel_size_cm(p) for p in parts) if t is not None]
-    warnings = []
     if texels and gsd * 100 < statistics.median(texels) * 0.5:
         warnings.append(f"gsd {gsd * 100:g} cm jest drobniejsze niż mediana tekstur ({statistics.median(texels):.1f} cm "
                         "na teksel): obraz będzie rozmyty, bez nowych szczegółów")

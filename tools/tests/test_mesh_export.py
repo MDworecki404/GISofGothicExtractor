@@ -54,7 +54,7 @@ def test_triangles_face_along_normals(exported):
     assert agree / total > 0.95
 
 
-def test_triangulate_skip_lod_flag():
+def test_triangulate_keeps_only_polygons_of_bsp_leaves():
     from types import SimpleNamespace as NS
 
     from gothic_extract.mesh_export import _triangulate
@@ -62,6 +62,23 @@ def test_triangulate_skip_lod_flag():
     def poly(lod):
         return NS(is_portal=False, is_lod=lod, material_index=0, position_indices=[0, 1, 2], feature_indices=[0, 1, 2])
 
-    mesh = NS(materials=[NS(name="WALL")], polygons=[poly(False), poly(True)])
-    assert len(_triangulate(mesh)[0]) == 1  # G2: LOD polygons are dropped
-    assert len(_triangulate(mesh, skip_lod=False)[0]) == 2  # G1: the flag is unreliable, keep everything
+    mesh = NS(materials=[NS(name="WALL")], polygons=[poly(True), poly(True), poly(False)])
+    assert len(_triangulate(mesh, {0, 2})[0]) == 2  # polygon 1 is in no leaf: the engine never draws it
+    assert len(_triangulate(mesh, {0, 1, 2})[0]) == 3  # the LOD flag does not matter (G1 sets it on 98 %)
+
+
+def test_g1_world_draws_only_what_the_bsp_tree_draws():
+    from gothic_extract.config import load_game
+    from gothic_extract.mesh_export import _triangulate
+    from gothic_extract.vfs import open_vfs
+    from gothic_extract.world_data import load_world
+
+    cfg = load_game("g1")
+    if not cfg.root.exists():
+        pytest.skip("Gothic folder not present")
+    world, _ = load_world(open_vfs(cfg), "WORLD.ZEN", cfg.version)
+    leaf = set(world.bsp_tree.leaf_polygon_indices)
+    assert len(leaf) < len(world.mesh.polygons)  # G1 keeps LOD stand-ins and portal walls that no leaf references
+    _, _, mats = _triangulate(world.mesh, leaf)
+    names = {world.mesh.materials[int(i)].name.upper() for i in set(mats.tolist())}
+    assert "Z_PORTALMAT" not in names  # invisible sector walls: the "black walls in the forests"

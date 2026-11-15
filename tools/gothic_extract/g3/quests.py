@@ -4,11 +4,15 @@ A .quest file gives the journal title (LogTopic -> stringtable), the quest type,
 items, characters or enclaves, with DeliveryAmounts), DestinationEntity and the XP reward. Dialogs (.info) name
 their quest in `Quest`; the owner of a dialog with ConditionType 6 (the offer that starts the quest) is the giver.
 Every dialog of a quest is a stage (its first spoken line). Give commands hand items between the player and the
-NPC: to the player = reward, from the player = handover. Order of stages: the dialogs' SortID ("order": "script").
+NPC: to the player = reward, from the player = handover. Order of stages: the dialogs' SortID is only the order of writing; real dependencies come from the dialog
+conditions that name another dialog: `Parent` (a sub-dialog of a dialog) and `CondPlayerKnows` (a game event that
+`SetGameEvent` commands of other dialogs raise). A start dialog (ConditionType 6) with no such condition begins the
+quest. Every other stage keeps "script_order" (previous stage by SortID): the ConditionType enum is not documented.
 """
 from collections import defaultdict
 
 from ..catalog import ItemDef
+from ..quest_order import apply_order
 from .archive import G3Fs
 
 START_CONDITION = "6"  # gEInfoCondType of the dialog that offers/starts a quest (checked on Abe, Arakos…)
@@ -42,10 +46,15 @@ def extract_g3_quests(fs: G3Fs, strings: dict[str, str], catalog: dict[str, Item
     """npc_codes: characters that exist in the world; other DeliveryEntities/DestinationEntity names (zones,
     chests, enclaves) are then not listed as characters."""
     infos: dict[str, list[dict]] = defaultdict(list)
+    raisers: dict[str, set[str]] = defaultdict(set)   # game event -> dialogs whose SetGameEvent raises it
     for path in fs.list(suffix=".info"):
         info = _ini(fs.find(path))
         if info.get("Quest"):
             infos[info["Quest"]].append(info)
+        ids = _split(info.get("InfoScript_IDs1", ""))
+        for k, cmd in enumerate(_split(info.get("InfoScript_Commands", ""))):
+            if cmd == "SetGameEvent" and k < len(ids) and ids[k]:
+                raisers[ids[k]].add(info.get("Name", ""))
 
     def npc(code: str) -> dict:
         return {"code": code, "name": strings.get("FO_" + code) or code}
@@ -113,13 +122,44 @@ def extract_g3_quests(fs: G3Fs, strings: dict[str, str], catalog: dict[str, Item
                            "conditional": False, "function": code, "sources": [], "text": None})
 
         xp = _int(q.get("ExperiencePoints", "0"))
+        quest_order = {"id": f"quest:{code}", "stages": stages}
+        _order_stages(quest_order, dialogs, raisers)
         quests.append({
             "id": f"quest:{code}", "code": code, "aliases": [], "name": strings.get(q.get("LogTopic", "")) or code,
             "section": "mission", "mission_var": None, "chapter": None, "chapter_source": None,
             "giver": npc(giver) if giver else None,
             "giver_certainty": "always" if giver else ("possible" if givers else None),
             "giver_candidates": [] if giver else [npc(g) for g in givers],
-            "order": "script", "stages": stages, "characters": list(chars.values()), "items": list(items.values()),
+            "order": quest_order["order"], "stages": stages, "characters": list(chars.values()), "items": list(items.values()),
             "rewards": {"xp": xp or None, "xp_certainty": "always" if xp else None},
         })
     return quests
+
+
+def _order_stages(quest: dict, dialogs: list[dict], raisers: dict[str, set[str]]) -> None:
+    """Fill requires / requires_source / level / alternative_group / hours of a quest's stages (see quest_order)."""
+    stages = quest["stages"]
+    seq_of = {i.get("Name", ""): st["seq"] for i, st in zip(dialogs, stages)}
+    requires: dict[int, set[int]] = {}
+    source: dict[int, str] = {}
+    for k, st in enumerate(stages):
+        info = dialogs[k] if dialogs else {}
+        preds: set[int] = set()
+        unresolved = False
+        if info.get("Parent") in seq_of:
+            preds.add(seq_of[info["Parent"]])
+        for flag in _split(info.get("CondPlayerKnows", "")):
+            who = raisers.get(flag, set())
+            if not who:
+                unresolved = True           # nothing in the dialogs raises this event
+            elif all(w in seq_of for w in who):
+                preds |= {seq_of[w] for w in who}
+        preds.discard(st["seq"])
+        if preds:
+            requires[st["seq"]], source[st["seq"]] = preds, "condition"
+        elif info and info.get("ConditionType") == START_CONDITION and not unresolved:
+            requires[st["seq"]], source[st["seq"]] = set(), "condition"
+        else:
+            requires[st["seq"]], source[st["seq"]] = ({stages[k - 1]["seq"]} if k else set()), "script_order"
+    apply_order(quest, requires, source, {st["seq"]: set() for st in stages}, {})
+    quest["order"] = quest.get("order", "script")

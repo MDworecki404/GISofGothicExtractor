@@ -132,3 +132,29 @@ def test_guild_names_listed_for_guilds_in_the_world(tmp_path, g2_cfg, g2_vm):
     used = {f["properties"]["guild_name"] for f in json.loads((dst / "npcs.geojson").read_text("utf-8"))["features"]}
     assert set(names) == used
     assert names["MIL"] == "Strażnik"
+
+
+def test_compact_waypoints_drops_tot_and_indexes_edges():
+    from gothic_extract.geoportal import compact_waypoints
+
+    def pt(name, lon, lat, h, wet=False):
+        return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat, h]},
+                "properties": {"id": f"wp-{name}", "name": name, "under_water": wet, "source": "zen",
+                               "game_pos": [0, 0, 0], "height_m": h}}
+
+    def edge(a, b):
+        return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0, 0, 0], [1, 1, 1]]},
+                "properties": {"a": a, "b": b}}
+
+    fc = {"type": "FeatureCollection", "features": [
+        pt("TOT", 0, 0, 0), pt("A", 0.12345678, 0.00000049, 12.345), pt("B", 1, 2, 3, True), pt("C", 4, 5, 6),
+        edge("B", "A"), edge("A", "B"), edge("A", "A"), edge("A", "TOT"), edge("B", "C"), edge("C", "NOPE")]}
+    wp = compact_waypoints(fc, "g1", "WORLD")
+    assert wp == {"version": 1, "game": "g1", "world": "WORLD",
+                  "nodes": [["A", 0.123457, 0.0, 12.3, 0], ["B", 1, 2, 3, 1], ["C", 4, 5, 6, 0]],
+                  "edges": [[0, 1], [1, 2]]}
+
+
+def test_compact_waypoints_none_without_points():
+    from gothic_extract.geoportal import compact_waypoints
+    assert compact_waypoints({"type": "FeatureCollection", "features": []}, "g3", "G3_WORLD_01") is None

@@ -4,8 +4,9 @@ python -m gothic_extract.package --game g1            # from existing extraction
 python -m gothic_extract.package --game g2nk --extract  # run the full extraction of each world first
 
 Per world: geoportal package (layers, search index, glb, models, guild_names) -> quests (quests.json, quest entries,
-package version 4) -> movement speeds. The steps run in this order for all worlds of the game, so a rebuilt
-package is always a finished v4 package (the geoportal step alone writes v3). Finishes with the package validator.
+package version 4) -> movement speeds -> locations (locations.json, package version 5). The steps run in this order
+for all worlds of the game, so a rebuilt package is always a finished v5 package (the geoportal step alone writes v3).
+Finishes with the package validator.
 """
 import argparse
 import json
@@ -13,9 +14,12 @@ import sys
 from pathlib import Path
 
 from .__main__ import main as extract_world
+from .catalog import build_item_catalog
 from .config import PROJECT_ROOT, load_game
+from .descriptions import add_descriptions, item_descriptions
 from .geoportal import build_geoportal
 from .guilds import guild_names_pl
+from .locations import add_locations, summarize as summarize_locations
 from .movement_speeds import ANIMATIONS, movement_speeds
 from .quests import extract_quests
 from .quests_package import build as build_quests, load_worlds, summarize
@@ -38,6 +42,13 @@ def _set_meta(pkg: Path, **fields) -> None:
     meta = json.loads(path.read_text("utf-8"))
     meta.update(fields)
     path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def _add_descriptions(pkg: Path, catalog: dict[str, dict], engine: str) -> None:
+    """Last step: `description` on every item record (quests and loot add records after the geoportal step)."""
+    r = add_descriptions(pkg, item_descriptions(catalog, engine), set(catalog))
+    print(f"  opisy przedmiotów: {r['with_description']} z {r['items']} w indeksie, "
+          f"nierozróżnionych grup nazw {len(r['same_label'])}", flush=True)
 
 
 def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, extract: bool) -> dict[str, Path]:
@@ -81,6 +92,10 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
         print(summarize(r["world"], r["quests"]), flush=True)
         _set_meta(pkgs[zen], movement_speeds_m_s=speeds, movement_speeds_animations=[],
                   movement_speeds_parameters={"source": "PC_Hero gCCharacterMovement_PS", "properties": PARAMETERS})
+        _add_descriptions(pkgs[zen], {k: v.to_dict() for k, v in catalog.items()}, cfg.engine)
+        from .g3.locations import g3_locations
+
+        print(summarize_locations(zen, g3_locations(fs, cfg, zen, strings, pkgs[zen])), flush=True)
     return pkgs
 
 
@@ -114,8 +129,13 @@ def build_game(game: str, out_root: Path, dist_root: Path, only: list[str] | Non
                   + "; ".join(f"{q['code']} ({q['name']})" for q in r["unassigned"]))
     speeds = movement_speeds(open_vfs(cfg))
     print(f"  movement_speeds_m_s: {speeds}")
+    catalog = {k: v.to_dict() for k, v in build_item_catalog(vm).items()}
     for pkg in pkgs.values():
         _set_meta(pkg, movement_speeds_m_s=speeds, movement_speeds_animations=ANIMATIONS)
+        _add_descriptions(pkg, catalog, cfg.engine)
+    vfs = open_vfs(cfg)
+    for zen, pkg in pkgs.items():
+        print(summarize_locations(zen, add_locations(cfg, zen, pkg, out_root, vfs)), flush=True)
     return pkgs
 
 

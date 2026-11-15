@@ -41,6 +41,50 @@ name_pl = "Jarkendar"
 slug = "irdorath"
 name_pl = "Irdorath"
 
+# The Chronicles of Myrtana: Archolos (Polish), a Gothic 2 Night of the Raven mod. The base resources are the stock
+# G2NK archives in Data/; the mod's own archives (Data/KM_*.mod) override them. The compiled scripts live only inside
+# KM_ScriptsPL.mod, so GOTHIC.DAT is copied out of the archives (config._materialize_script_dat).
+[archolos]
+root = "TheChroniclesOfMyrtana"
+version = "GOTHIC2"
+vdf_glob = ["Data/*.vdf", "Data/*.mod"]
+vdf_exclude = ["Speech*", "Sound*", "KM_Speech*", "KM_Sound*", "KM_Music*"]
+script_dat_in_archive = "_WORK/DATA/SCRIPTS/_COMPILED/GOTHIC.DAT"
+anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
+
+# Entry points per world. B_ENTER_ARCHOLOS_KAPITEL_n (the chapter spawns, called from B_CHAPTERCHANGE) belong to the
+# main land. The mod enters the other worlds from console commands and teleports, not from a chapter, so there is no
+# [archolos.first_chapter]: inserts outside a chapter function keep chapter = null (as in G1's mines).
+[archolos.world_roots]
+ARCHOLOS_MAINLAND = ["STARTUP_ARCHOLOS_MAINLAND", "INIT_ARCHOLOS_MAINLAND", "B_ENTER_ARCHOLOSMIANLAND*", "B_ENTER_ARCHOLOS_KAPITEL_*"]
+ARCHOLOS_SEWERS = ["STARTUP_ARCHOLOS_SEWERS", "INIT_ARCHOLOS_SEWERS", "B_ENTER_ARCHOLOS_SEWERS*"]
+ARCHOLOS_SILVERMINE = ["STARTUP_ARCHOLOS_SILVERMINE", "INIT_ARCHOLOS_SILVERMINE", "B_ENTER_SILVERMINE*"]
+ARCHOLOS_VOLFZACKE = ["STARTUP_ARCHOLOS_VOLFZACKE", "INIT_ARCHOLOS_VOLFZACKE", "B_ENTER_VOLFZACKE*"]
+ARCHOLOS_ENDGAME = ["STARTUP_ARCHOLOS_ENDGAME", "INIT_ARCHOLOS_ENDGAME", "B_ENTER_ARCHOLOS_ENDGAME*"]
+
+# Package slug and Polish name per ZEN. All names are working names (the mod has no world names); the other ZENs in
+# KM_Worlds.mod (FIRETREE_*, ITLSTORCH*) are effect meshes, not worlds.
+[archolos.worlds.ARCHOLOS_MAINLAND]
+slug = "archolos"
+name_pl = "Archolos"
+provisional_name = true
+[archolos.worlds.ARCHOLOS_SEWERS]
+slug = "kanaly"
+name_pl = "Kanały Archolos"
+provisional_name = true
+[archolos.worlds.ARCHOLOS_SILVERMINE]
+slug = "srebrna-kopalnia"
+name_pl = "Srebrna Kopalnia"
+provisional_name = true
+[archolos.worlds.ARCHOLOS_VOLFZACKE]
+slug = "volfzacke"
+name_pl = "Volfzacke"
+provisional_name = true
+[archolos.worlds.ARCHOLOS_ENDGAME]
+slug = "finalowy-etap"
+name_pl = "Finałowy etap"
+provisional_name = true
+
 [g1]
 root = "Gothic"
 version = "GOTHIC1"
@@ -49,9 +93,6 @@ vdf_exclude = ["Speech*", "sound*"]
 script_dat = "_work/DATA/scripts/_compiled/Gothic.dat"
 anchor = { lon = 0.0, lat = 0.0, h = 0.0 }
 chapter_dispatcher = "B_KAPITELWECHSEL"
-
-# ZenKit sets the polygon LOD flag on ~96 % of the G1 world mesh (G2: none), which would drop almost all geometry.
-skip_lod_polygons = false
 
 # G1 has no B_ENTER_*: every world has STARTUP_<ZEN> / INIT_<ZEN> and the Colony's camps are sub-startups of STARTUP_WORLD.
 # STARTUP_WORLD_ORCS / STARTUP_WORLD_DEMO / STARTUP_AI_TESTLEVEL* are not wired to any world and stay out.

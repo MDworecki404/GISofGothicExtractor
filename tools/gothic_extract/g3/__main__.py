@@ -13,6 +13,7 @@ from .archive import open_g3fs
 from .catalog import build_g3_catalog
 from .strings import load_strings
 from .templates import load_templates
+from .navnet import nav_net
 from .models import export_item_previews, export_models, node_files, node_placements, speedtrees, world_placements
 from .terrain import export_terrain_glb, landscape_meshes
 from .treasure import load_treasure_sets
@@ -51,6 +52,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-texture", type=int, default=512, help="largest terrain texture side (pixels)")
     ap.add_argument("--max-model-texture", type=int, default=256,
                     help="largest texture side of objects and item previews (pixels); 342 textures, keeps vobs.glb smaller")
+    ap.add_argument("--vobs-parts", type=int, default=4,
+                    help="also write vobs_czesci/vobs_czesc_<n>.glb: vobs.glb in this many equal spatial parts "
+                         "(power of two; 1 = none)")
     args = ap.parse_args(argv)
 
     cfg = load_game(args.game)
@@ -66,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[3/4] world {args.world}", flush=True)
     stats = WorldStats()
     wd, npcs = extract_world(fs, cfg, args.world, templates, strings, stats)
+    wd.waypoints, wd.edges = nav_net(fs, args.world)  # road network from the NavZones sectors
+    print(f"  road network: {len(wd.waypoints)} nodes, {len(wd.edges)} edges", flush=True)
     mesh = None
     if not args.skip_mesh:
         print("[4/4] terrain -> world.glb", flush=True)
@@ -77,7 +83,8 @@ def main(argv: list[str] | None = None) -> int:
         nodes = node_files(fs, args.world, sector_names(fs, args.world, cfg.sector_exclude, cfg.include_disabled_sectors))
         world_places, animated = world_placements(fs, cfg, args.world, templates)
         mr = export_models(fs, node_placements(fs, nodes) + world_places, args.out / "models", args.max_model_texture,
-                           {"speedtree": speedtrees(fs, nodes), "animated_unreadable": animated})
+                           {"speedtree": speedtrees(fs, nodes), "animated_unreadable": animated},
+                           args.vobs_parts)
         print(f"  models: {mr.models}, instances: {mr.instances}, missing: {sum(mr.missing.values())}, "
               f"unreadable animated: {animated}, "
               f"not supported: {mr.unhandled}", flush=True)

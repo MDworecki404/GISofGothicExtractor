@@ -20,6 +20,7 @@ from zenkit.daedalus.npc import NpcInstanceNameSlot
 
 from .catalog import instances_of
 from .daedalus_scan import CallSite, Op, _idx, functions, scan_assignments, scan_function, symbol_name
+from .quest_order import add_order
 from .text import game_text
 
 CREATE, ENTRY, STATUS, CLOSE = "create", "entry", "status", "close"
@@ -264,8 +265,9 @@ def _merge(entries: list[tuple[object, int, bool]]) -> dict[object, tuple[int, s
     return out
 
 
-def extract_quests(vm: zenkit.DaedalusVm) -> list[dict]:
-    """World-independent quest records (one per topic name); fields are described in geoportal_README."""
+def extract_quests(vm: zenkit.DaedalusVm, stats: dict | None = None) -> list[dict]:
+    """World-independent quest records (one per topic name); fields are described in geoportal_README.
+    Stage order (requires, level...) comes from quest_order; `stats` receives its counters."""
     events, scans, origins = collect_events(vm)
     npc_names, item_names = names_of(vm)
     status_names = {s.get_int(): s.name[4:].upper() for s in vm.symbols
@@ -286,7 +288,11 @@ def extract_quests(vm: zenkit.DaedalusVm) -> list[dict]:
             if e.kind == STATUS and status_names.get(e.value) == "SUCCESS":
                 success_topics[e.caller].add(t.code)
     ctx = (scans, npc_names, item_names, status_names, success_topics)
-    return [_quest(vm, t, ctx) for t in sorted(topics, key=lambda t: t.code)]
+    quests = [_quest(vm, t, ctx) for t in sorted(topics, key=lambda t: t.code)]
+    info = add_order(vm, quests, scans, origins)
+    if stats is not None:
+        stats.update(info)
+    return quests
 
 
 def _quest(vm, t: Topic, ctx) -> dict:
@@ -316,7 +322,7 @@ def _quest(vm, t: Topic, ctx) -> dict:
                     **({"name": item_names.get(o.name.upper())} if o.kind == "item" else {})} for o in e.origins]
         st = {"seq": len(stages) + 1, "kind": e.kind, "chapter": chapter,
               "chapter_source": None if chapter is None else ("function" if by_name else "condition"),
-              "conditional": e.conditional, "function": e.caller, "sources": sources}
+              "conditional": e.conditional, "function": e.caller, "sources": sources, "_address": e.address}
         if e.kind == ENTRY:
             st["text"] = e.text
         else:

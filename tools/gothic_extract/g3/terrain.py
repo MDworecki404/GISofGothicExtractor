@@ -15,7 +15,7 @@ import pygltflib as gl
 from ..mesh_export import Blob, MeshStats
 from .archive import G3Fs
 from .genome import FormatError
-from .image import material_texture, ximg_to_png
+from .image import apply_alpha_mode, material_info, ximg_to_png
 from .mesh import read_xcmsh
 
 REGIONS = ("Myrtana", "Varant", "Nordmar")
@@ -27,15 +27,16 @@ def landscape_meshes(fs: G3Fs) -> list[str]:
             if p.split("/")[0].startswith(tuple(f"G3_{r}_Landscape" for r in REGIONS))]
 
 
-def _texture(fs: G3Fs, material: str, max_texture: int) -> tuple[bytes, bool] | None:
-    name = material_texture(fs.find_name(material))
-    data = fs.find_name(name) if name else None
+def _texture(fs: G3Fs, material: str, max_texture: int):
+    """(MaterialInfo | None, (PNG bytes, has_alpha) | None) of a terrain material."""
+    info = material_info(fs.find_name(material))
+    data = fs.find_name(info.texture) if info and info.texture else None
     if data is None:
-        return None
+        return info, None
     try:
-        return ximg_to_png(data, max_texture)
+        return info, ximg_to_png(data, max_texture, info.alpha_mode != "OPAQUE")
     except FormatError:
-        return None
+        return info, None
 
 
 def export_terrain_glb(fs: G3Fs, paths: list[str], out_path: Path, max_texture: int = 512) -> MeshStats:
@@ -84,7 +85,7 @@ def export_terrain_glb(fs: G3Fs, paths: list[str], out_path: Path, max_texture: 
         )
         pbr = gl.PbrMetallicRoughness(metallicFactor=0.0, roughnessFactor=1.0)
         mat = gl.Material(name=material, pbrMetallicRoughness=pbr)
-        tex = _texture(fs, material, max_texture)
+        info, tex = _texture(fs, material, max_texture)
         if tex is None:
             pbr.baseColorFactor = [0.5, 0.5, 0.5, 1.0]
             stats.textures_missing.append(material)
@@ -94,8 +95,7 @@ def export_terrain_glb(fs: G3Fs, paths: list[str], out_path: Path, max_texture: 
             textures.append(gl.Texture(source=len(images) - 1, sampler=0))
             pbr.baseColorTexture = gl.TextureInfo(index=len(textures) - 1)
             stats.textures_ok += 1
-            if has_alpha:
-                mat.alphaMode, mat.alphaCutoff, mat.doubleSided = gl.MASK, 0.5, True
+            apply_alpha_mode(mat, info, has_alpha)
         materials.append(mat)
         primitives.append(gl.Primitive(attributes=attrs, material=len(materials) - 1,
                                        indices=accessor(indices, gl.SCALAR, gl.UNSIGNED_INT, gl.ELEMENT_ARRAY_BUFFER)))

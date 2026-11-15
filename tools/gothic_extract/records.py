@@ -44,6 +44,7 @@ class WaypointRec:
     pos: Vec3
     is_free_point: bool
     under_water: bool
+    source: str = "zen"  # "zen": way net of the world; "navzones": Gothic 3 nav paths and zones
 
 
 @dataclass

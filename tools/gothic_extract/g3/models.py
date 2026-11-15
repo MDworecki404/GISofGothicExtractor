@@ -21,7 +21,7 @@ from ..vob_models import INSTANCING, _quat_from_matrix
 from .archive import G3Fs
 from .entities import read_node_file, walk
 from .genome import FormatError
-from .image import material_texture, ximg_to_png
+from .image import WATER_COLOR, apply_alpha_mode, material_info, ximg_to_png
 from .mesh import MeshElement, load_mesh
 
 _F = np.diag([1.0, 1.0, -1.0])
@@ -41,6 +41,7 @@ class ModelsReport:
     instances: int = 0
     missing: Counter = field(default_factory=Counter)  # mesh -> placements without a readable mesh
     unhandled: dict[str, int] = field(default_factory=dict)  # kind of visual -> placements not exported
+    hidden: int = 0  # placements of water helper meshes (depth, far sea), which the game does not draw
 
 
 def _linear(world: list[float]) -> tuple[np.ndarray, np.ndarray]:
@@ -67,6 +68,29 @@ def instance_trs(world: list[float]) -> tuple[tuple[float, ...], tuple[float, ..
     u, _, vt = np.linalg.svd(rot)  # remove shear/rounding so the quaternion is a pure rotation
     rot = u @ vt
     return tuple(float(v) for v in t), _quat_from_matrix(rot), tuple(float(v) for v in s)
+
+
+def spatial_parts(worlds: list[list[float]], parts: int) -> list[int]:
+    """Part number (0-based) of every placement: a balanced split by x, then by z inside each half (and x, z, x… for
+    more parts), so parts have equal counts and are compact. `parts` is a power of two; parts are numbered
+    west-south, west-north, east-south, east-north for 4."""
+    t = np.array([_linear(w)[1] for w in worlds]).reshape(-1, 3)
+    out = [0] * len(worlds)
+
+    def split(idx: np.ndarray, k: int, first: int, axis: int) -> None:
+        if k == 1:
+            for i in idx:
+                out[i] = first
+            return
+        idx = idx[np.argsort(t[idx, axis], kind="stable")]
+        half = len(idx) // 2
+        split(idx[:half], k // 2, first, 2 - axis)
+        split(idx[half:], k // 2, first + k // 2, 2 - axis)
+
+    if parts < 1 or parts & (parts - 1):
+        raise ValueError("parts must be a power of two")
+    split(np.arange(len(worlds)), parts, 0, 0)
+    return out
 
 
 def node_files(fs: G3Fs, world: str, sector_names: list[str]) -> list[str]:
@@ -166,25 +190,34 @@ class _Builder:
         self.accessors.append(acc)
         return len(self.accessors) - 1
 
-    def _png(self, material: str):
+    def _resolved(self, material: str):
+        """(MaterialInfo | None, (stem, png, has_alpha) | None); None info for actors, which name a .ximg directly."""
         if material not in self.tex_cache:
-            # .xshmat material -> its diffuse texture; actors name the texture (.ximg) directly
-            name = material if material.lower().endswith(".ximg") else material_texture(self.fs.find_name(material))
+            info = None if material.lower().endswith(".ximg") else material_info(self.fs.find_name(material))
+            name = material if info is None else info.texture
             data = self.fs.find_name(name) if name else None
             try:
-                png = ximg_to_png(data, self.max_texture) if data else None
+                png = ximg_to_png(data, self.max_texture, info is None or info.alpha_mode != "OPAQUE") if data else None
             except FormatError:
                 png = None
-            self.tex_cache[material] = (name.rsplit(".", 1)[0].lower(), *png) if png else None
+            self.tex_cache[material] = (info, (name.rsplit(".", 1)[0].lower(), *png) if png else None)
         return self.tex_cache[material]
+
+    def hidden(self, material: str) -> bool:
+        """Depth and far-sea helper meshes of the water: not drawn by the game, would cover the terrain."""
+        info = self._resolved(material)[0]
+        return info is not None and info.hidden
 
     def material(self, material: str) -> int:
         if material in self.material_idx:
             return self.material_idx[material]
         pbr = gl.PbrMetallicRoughness(metallicFactor=0.0, roughnessFactor=1.0)
         mat = gl.Material(name=material, pbrMetallicRoughness=pbr)
-        tex = self._png(material)
-        if tex is None:
+        info, tex = self._resolved(material)
+        if info is not None and info.is_water:  # samplers are normal maps: flat translucent colour instead
+            pbr.baseColorFactor = list(WATER_COLOR)
+            mat.alphaMode = "BLEND"
+        elif tex is None:
             pbr.baseColorFactor = [0.6, 0.6, 0.6, 1.0]
         else:
             stem, png, has_alpha = tex
@@ -199,14 +232,14 @@ class _Builder:
                 self.images.append(gl.Image(uri=uri, mimeType="image/png", name=stem))
             self.textures.append(gl.Texture(source=len(self.images) - 1, sampler=0))
             pbr.baseColorTexture = gl.TextureInfo(index=len(self.textures) - 1)
-            if has_alpha:
-                mat.alphaMode, mat.alphaCutoff, mat.doubleSided = gl.MASK, 0.5, True
+            apply_alpha_mode(mat, info, has_alpha)
         self.materials.append(mat)
         self.material_idx[material] = len(self.materials) - 1
         return self.material_idx[material]
 
     def add_mesh(self, elements: list[MeshElement], name: str, recenter: bool = False) -> tuple[int, int]:
         """→ (mesh index, triangles of one copy)."""
+        elements = [el for el in elements if not self.hidden(el.material)]
         pts = [(el.positions.astype(np.float64) @ _F) / 100.0 for el in elements]
         shift = np.zeros(3)
         if recenter:
@@ -269,9 +302,10 @@ def _file_name(mesh: str) -> str:
 
 
 def export_models(fs: G3Fs, placements: list[Placement], out_dir: Path, max_texture: int = 512,
-                  unhandled: dict[str, int] | None = None) -> ModelsReport:
+                  unhandled: dict[str, int] | None = None, vobs_parts: int = 1) -> ModelsReport:
     """models/<mesh>.glb per mesh (EXT_mesh_gpu_instancing, textures in models/textures/) and ../vobs.glb with
-    every placement as a plain node (textures embedded), plus models/index.json."""
+    every placement as a plain node (textures embedded), plus models/index.json. vobs_parts > 1 also writes
+    ../vobs_czesci/vobs_czesc_<n>.glb: the same nodes in equal spatial parts, each with only its own textures."""
     report = ModelsReport(unhandled=dict(unhandled or {}))
     out_dir.mkdir(parents=True, exist_ok=True)
     for stale in list(out_dir.glob("*.glb")) + list((out_dir / "textures").glob("*.png")):
@@ -282,11 +316,16 @@ def export_models(fs: G3Fs, placements: list[Placement], out_dir: Path, max_text
     tex_shared: dict = {}
     combined = _Builder(fs, out_dir.parent / "vobs.glb", tex_shared, None, max_texture)
     entries = []
+    exported: list[tuple[str, list[MeshElement], list[list[float]]]] = []
     for mesh in sorted(groups):
         places = groups[mesh]
         elements = load_mesh(fs, mesh) if mesh else None
         if not elements:
             report.missing[mesh or "<no mesh>"] += len(places)
+            continue
+        elements = [el for el in elements if not combined.hidden(el.material)]
+        if not elements:  # water helper meshes only
+            report.hidden += len(places)
             continue
         worlds = [p.world for p in places]
         one = _Builder(fs, out_dir / _file_name(mesh), tex_shared, "textures", max_texture)
@@ -295,17 +334,39 @@ def export_models(fs: G3Fs, placements: list[Placement], out_dir: Path, max_text
         one.save()
         cm, _ = combined.add_mesh(elements, mesh)
         combined.add_nodes(cm, mesh, worlds)
+        exported.append((mesh, elements, worlds))
         kind = "item" if any(p.kind == "item" for p in places) else "vob"
         entries.append({"visual": mesh, "file": _file_name(mesh), "kind": kind, "instances": len(places),
                         "triangles": tris})
         report.models += 1
         report.instances += len(places)
     combined.save()
+    if vobs_parts > 1:
+        _save_parts(fs, exported, out_dir.parent / "vobs_czesci", tex_shared, max_texture, vobs_parts)
     (out_dir / "index.json").write_text(json.dumps(
         {"frame": "same as world.glb: (x/100, y/100, -z/100) of game coordinates", "extension": INSTANCING,
-         "models": entries, "missing": sorted(report.missing), "missing_instances": sum(report.missing.values()),
+         "models": entries, "missing": sorted(report.missing), "missing_instances": sum(report.missing.values()), "hidden_instances": report.hidden,
          "unhandled": report.unhandled}, ensure_ascii=False, indent=1), encoding="utf-8")
     return report
+
+
+def _save_parts(fs: G3Fs, exported, folder: Path, tex_cache: dict, max_texture: int, parts: int) -> None:
+    """vobs_czesc_<n>.glb: every placement once, in the part of its position; one mesh per model and part."""
+    flat = [(i, w) for i, (_, _, worlds) in enumerate(exported) for w in worlds]
+    part_of = spatial_parts([w for _, w in flat], parts)
+    wanted: list[dict[int, list]] = [defaultdict(list) for _ in range(parts)]
+    for (i, w), part in zip(flat, part_of):
+        wanted[part][i].append(w)
+    folder.mkdir(parents=True, exist_ok=True)
+    for stale in folder.glob("vobs_czesc_*.glb"):
+        stale.unlink()
+    for n, models in enumerate(wanted, 1):
+        b = _Builder(fs, folder / f"vobs_czesc_{n}.glb", tex_cache, None, max_texture)
+        for i, worlds in sorted(models.items()):
+            mesh, elements, _ = exported[i]
+            m, _ = b.add_mesh(elements, mesh)
+            b.add_nodes(m, mesh, worlds)
+        b.save()
 
 
 @dataclass
@@ -333,11 +394,11 @@ def export_item_previews(fs: G3Fs, catalog: dict[str, ItemDef], out_dir: Path, m
             report.reason[code] = "no_visual"
             continue
         if vis not in done:
-            elements = load_mesh(fs, vis)
+            b = _Builder(fs, out_dir / _file_name(vis), tex_cache, "../textures", max_texture)
+            elements = [el for el in load_mesh(fs, vis) or [] if not b.hidden(el.material)]
             if not elements:
                 done[vis] = None
             else:
-                b = _Builder(fs, out_dir / _file_name(vis), tex_cache, "../textures", max_texture)
                 m, tris = b.add_mesh(elements, vis, recenter=True)
                 b.add_nodes(m, vis, None)
                 b.save()
