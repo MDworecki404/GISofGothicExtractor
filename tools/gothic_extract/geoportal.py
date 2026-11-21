@@ -47,6 +47,8 @@ def _lock_label(p: dict) -> str:
 # The same person with two instance codes in one world (e.g. before/after joining the dragon hunters).
 # Counting rules cannot tell these from generic two-instance names, so they are listed by name.
 SAME_PERSON = {"Gorn", "Myxir"}
+# Helper instances of the Archolos scripts (they hold items / memory for the scripts, have no visual, are not people).
+SCRIPT_DUMMIES = {"ITEM_HOLDER_INST", "ITEM_HELPER_INST", "MEM_HELPER_INST"}
 
 
 def unique_characters(npcs: list[dict]) -> dict[str, list[str]]:
@@ -60,7 +62,7 @@ def unique_characters(npcs: list[dict]) -> dict[str, list[str]]:
     codes_by_name: dict[str, list[str]] = defaultdict(list)
     for f in npcs:
         p = f["properties"]
-        if not p["name"]:
+        if not p["name"] or p["code"] in SCRIPT_DUMMIES:
             continue
         if p["is_human"] or (p["name_unique_in_game"] and p["inserts_in_game"] == 1):
             if p["code"] not in codes_by_name[p["name"]]:

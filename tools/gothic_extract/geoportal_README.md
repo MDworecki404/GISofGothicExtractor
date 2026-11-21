@@ -103,6 +103,46 @@ Postać jest „unikatowa”:
 - **potwory** — imię jest jedyne w całej grze i potwór jest wstawiony raz w całej grze (Pan cienia Inubis, Czarny troll — tak;
   wilki, dziki, chrząszcze — nie).
 
+## Model 3D postaci (`model`)
+
+Dotyczy G1, G2 NK, Archolosa i Gothica 3 (paczki z katalogiem `models/characters/`). Każdy wpis `type: "character"`
+w `search_index.json` i każdy obiekt w `characters.geojson` ma pole `model`:
+
+```json
+{ "body": "characters/body_….glb" | "characters/creature_….glb" | null,
+  "head": "characters/head_….glb" | null,
+  "armor": "characters/armor_….glb" | null,
+  "weapon": "previews/….glb" | null }
+```
+
+albo **`null`**, gdy postaci nie da się pokazać (brak `Mdl_SetVisualBody` w skrypcie albo brak siatki w archiwach;
+powód jest w raporcie budowy paczki). Ścieżki są względem `models/`, jak przy przedmiotach.
+
+- **Postać jest złożona z części**, a części są wspólne: `body` albo `armor` + `head` + ewentualnie `weapon`.
+  Aplikacja ładuje je wszystkie i **dokłada w tym samym miejscu sceny** (początek układu) — bez liczenia kości.
+- **`armor` zastępuje `body`** (jak w grze): plik pancerza zawiera własną skórę (ramiona, nogi) z teksturą
+  ciała tej postaci, więc gdy `armor` jest ustawiony, `body` jest `null`. Gdy `armor` jest `null`, rysuje się `body`.
+- **Potwory, orkowie i inne nie-ludzkie szkielety**: jedna siatka w `body` (plik `creature_*.glb`), `head` i `armor` `null`.
+  Golemy składają się z kilku siatek jednego pliku.
+- `weapon`: na razie tylko w G1 i tylko, gdy przedmiot ma podgląd w `models/previews/` (pierwsza broń biała,
+  inaczej dystansowa, z ekwipunku); w pozostałych grach `null`.
+- Poza: siatka w **pozie bazowej**, bez animacji. G1/G2/Archolos: człowiek stoi, ręce przy ciele, ok. 1,8 m.
+  **G3: poza T** (ręce rozpostarte, rozpiętość ok. 1,3 m).
+- **G3**: `body` to aktor ciała (ubranie i pancerz są jego częścią, więc `armor` jest zawsze `null`), `head` to aktor głowy
+  razem z włosami i brodą w jednym pliku (ich położenie na głowie dobrane „na oko”, kości głowy nie czytamy).
+  Postacie G3 mają jeden wspólny układ (stopy y ≈ 0, środek w x = z = 0), potwory są wyśrodkowane osobno.
+- Układ jak przedmioty: glTF Y-up (Wschód, Góra, −Północ), **metry**. **Jedno przesunięcie na szkielet**: stojące
+  ciało jest wyśrodkowane w poziomie i dotyka y = 0; głowa i pancerz tego samego szkieletu mają to samo przesunięcie,
+  więc pasują do siebie bez poprawek. Postać patrzy w stronę −z.
+- Tekstury: PNG **do 512 px**, `../textures/*.png` we wspólnym `models/textures/` świata (te same pliki co
+  przedmioty, jeśli nazwa się zgadza i mieści się w limicie). Brakująca w grze tekstura (literówki w skryptach)
+  zostaje kolorem materiału.
+- `models/characters/index.json`: `parts` — dla każdego pliku `file`, `kind` (`body`/`head`/`armor`/`creature`),
+  `triangles`, `bytes`, `texture_bytes` i `bounds_m` (`{x, y, z}`).
+- Nazwa pliku mówi, z czego jest zrobiony: `head_<siatka>_v<tekstura>_c<skóra>_t<zęby>`, `armor_<siatka>_v<tekstura ciała>_c<skóra>`.
+  Ta sama część ma jeden plik. Głowy z różnych tekstur twarzy są osobnymi (małymi) plikami.
+- Z pakietu: `python -m gothic_extract.character_models --game g2nk` (też w kroku `package`).
+
 ## Model 3D przedmiotu (`model`)
 
 Każdy wpis `type: "item"` w `search_index.json`, każdy obiekt w `items.geojson` i każda skrzynia

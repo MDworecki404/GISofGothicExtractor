@@ -457,13 +457,14 @@ def validate_package(pkg: Path, game: str) -> PackageReport:
     _check_waypoints(pkg, meta, feats["npcs"], feats["character_places"], r)
     _check_locations(pkg, meta, r)
 
-    refs = {e["model"] for e in entries if e.get("model")}
+    refs = {e["model"] for e in entries if isinstance(e.get("model"), str)}
     refs |= {f["properties"]["model"] for n in ("items", "containers") for f in feats[n] if f["properties"].get("model")}
     missing = sorted(m for m in refs if not (pkg / "models" / m).is_file())
     if missing:
         r.errors.append(f"{len(missing)} modeli z `model` nie ma w models/, np. {missing[:3]}")
     if not refs:
         r.warnings.append("brak modeli podglądu przedmiotów (models/previews)")
+    _check_character_models(pkg, entries, feats["characters"], r)
 
     used = {f["properties"]["guild_name"] for f in feats["npcs"]}
     names = meta.get("guild_names", {})
@@ -476,6 +477,39 @@ def validate_package(pkg: Path, game: str) -> PackageReport:
         if not (pkg / fn).is_file():
             r.warnings.append(f"brak {fn}")
     return r
+
+
+def _check_character_models(pkg: Path, entries: list[dict], characters: list[dict], r) -> None:
+    """`model` of characters: absent everywhere (package without character models) or `{body, head, armor, weapon}`
+    (paths relative to models/, each null or an existing file) or null; characters.geojson and the index agree."""
+    keys = {"body", "head", "armor", "weapon"}
+    models = {f["properties"].get("code", i): f["properties"].get("model", "absent") for i, f in enumerate(characters)}
+    if all(m == "absent" for m in models.values()):
+        return
+    bad = [c for c, m in models.items() if m == "absent"]
+    if bad:
+        r.errors.append(f"characters.geojson: {len(bad)} postaci bez pola model, np. {bad[:3]}")
+    paths = set()
+    for c, m in models.items():
+        if m in (None, "absent"):
+            continue
+        if not isinstance(m, dict) or set(m) != keys:
+            r.errors.append(f"characters.geojson: model {c} to nie {{body, head, armor, weapon}}")
+            continue
+        paths |= {v for v in m.values() if v}
+    for e in entries:
+        if e["type"] == "character" and "model" in e and e["model"] != models.get(e["code"], "absent"):
+            r.errors.append(f"search_index: model postaci {e['code']} różny od characters.geojson")
+    missing = sorted(p for p in paths if not (pkg / "models" / p).is_file())
+    if missing:
+        r.errors.append(f"{len(missing)} modeli postaci z `model` nie ma w models/, np. {missing[:3]}")
+    idx = pkg / "models" / "characters" / "index.json"
+    if not idx.is_file():
+        r.errors.append("brak models/characters/index.json")
+        return
+    listed = {f"characters/{e['file']}" for e in json.loads(idx.read_text("utf-8"))["parts"]}
+    if {p for p in paths if p.startswith("characters/")} - listed:
+        r.errors.append("models/characters/index.json nie opisuje wszystkich plików z `model`")
 
 
 def validate_game(game: str, dist_root: Path) -> Report:

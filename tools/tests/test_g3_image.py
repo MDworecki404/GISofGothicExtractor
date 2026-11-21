@@ -58,3 +58,19 @@ def test_old_class_version_material_still_names_its_texture(g3_fs):
     # an eCResourceShaderMaterial_PS the property reader cannot parse (name and GUID before the properties)
     assert material_texture(g3_fs.find_name("G3_Objects_Interacts_Chest_Pod_02_A.xshmat")) == \
         "G3_Objects_Desert_Stuff_V_02_Diffuse_01.ximg"
+
+
+def test_ximg_largest_mip_is_the_last_level():
+    """Mip levels are stored smallest first: the 8x8 top level (4 blocks) follows 3 smaller levels (24 bytes)."""
+    import io
+    import struct
+
+    from PIL import Image
+
+    head = b"G3IMG\x02\x00/\x00" + struct.pack("<II", 8, 8)
+    head += b"\x00" * (40 - len(head)) + b"DXT1" + struct.pack("<III", 1, 0, 0)
+    red = bytes([0x00, 0xF8, 0x00, 0xF8, 0, 0, 0, 0])
+    data = head + bytes(24) + red * 4
+    png, _ = ximg_to_png(data, max_size=64)
+    px = Image.open(io.BytesIO(png)).convert("RGB").getpixel((3, 3))
+    assert px[0] > 200 and px[1] < 30 and px[2] < 30

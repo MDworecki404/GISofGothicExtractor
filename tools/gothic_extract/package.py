@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .__main__ import main as extract_world
 from .catalog import build_item_catalog
+from .character_models import add_character_models
 from .config import PROJECT_ROOT, load_game
 from .descriptions import add_descriptions, item_descriptions
 from .geoportal import build_geoportal
@@ -96,6 +97,10 @@ def build_genome_game(cfg, zens: list[str], out_root: Path, dist_root: Path, ext
         from .g3.locations import g3_locations
 
         print(summarize_locations(zen, g3_locations(fs, cfg, zen, strings, pkgs[zen])), flush=True)
+        from .g3.character_models import add_g3_character_models
+
+        r = add_g3_character_models(fs, cfg, zen, pkgs[zen])
+        print(f"  modele postaci: {r['with_model']}/{r['characters']}, {r['files']} plików, null: {r['null']}", flush=True)
     return pkgs
 
 
@@ -136,6 +141,9 @@ def build_game(game: str, out_root: Path, dist_root: Path, only: list[str] | Non
     vfs = open_vfs(cfg)
     for zen, pkg in pkgs.items():
         print(summarize_locations(zen, add_locations(cfg, zen, pkg, out_root, vfs)), flush=True)
+    for zen, pkg in pkgs.items():
+        r = add_character_models(game, pkg, vm, vfs)
+        print(f"  modele postaci: {r['with_model']}/{r['characters']}, {r['files']} plików, null: {r['null']}", flush=True)
     return pkgs
 
 

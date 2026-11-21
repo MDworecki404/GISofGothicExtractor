@@ -3,8 +3,9 @@
 .xshmat: eCResourceShaderMaterial_PS whose shader holds colour samplers (eCColorSrcSampler) with ImageFilePath
 (a .tga path from the editor; the game loads <name>.ximg). The diffuse sampler is the texture for glTF.
 .ximg: GENOMFLE + "G3IMG", u16 version, u16, u32 width, u32 height, …, a pixel format (DXT1/DXT3/DXT5),
-u32 1, u32 size of all mip levels, u32 0, then the mip levels, largest first. The largest level is wrapped in a
-DDS header and decoded by Pillow.
+u32 1, u32 size of all mip levels, u32 0, then the mip levels, **smallest first** (checked on 1024 px textures:
+read from the start they show the small levels as strips at the top of a garbled image). The largest level is the
+last one; it is wrapped in a DDS header and decoded by Pillow.
 """
 import io
 import re
@@ -115,6 +116,15 @@ def _dds(width: int, height: int, fourcc: bytes, top: bytes) -> bytes:
     return b"DDS " + header + pixel_format + struct.pack("<5I", 0x1000, 0, 0, 0, 0) + top
 
 
+def _smaller_levels(width: int, height: int, block_bytes: int) -> int:
+    """Bytes of all mip levels below the largest one (each at least one block)."""
+    total = 0
+    while width > 1 or height > 1:
+        width, height = max(1, width // 2), max(1, height // 2)
+        total += max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * block_bytes
+    return total
+
+
 def ximg_to_png(data: bytes, max_size: int = 512, keep_alpha: bool = True) -> tuple[bytes, bool]:
     """(PNG bytes, PNG has transparent pixels) of the largest mip level, scaled down to max_size.
     keep_alpha=False drops the alpha channel (materials whose shader is opaque)."""
@@ -127,8 +137,11 @@ def ximg_to_png(data: bytes, max_size: int = 512, keep_alpha: bool = True) -> tu
         raise FormatError(f"unsupported image format near {data[g:g + 64]!r}")
     fourcc = data[f:f + 4]
     blocks = max(1, (width + 3) // 4) * max(1, (height + 3) // 4)
-    start = f + 16
+    start = f + 16 + _smaller_levels(width, height, _BLOCK[fourcc])  # mip levels are stored smallest first
     top = data[start:start + blocks * _BLOCK[fourcc]]
+    if len(top) < blocks * _BLOCK[fourcc]:  # a file too short for that layout: the largest level comes first
+        start = f + 16
+        top = data[start:start + blocks * _BLOCK[fourcc]]
     img = Image.open(io.BytesIO(_dds(width, height, fourcc, top)))
     img.load()
     img = img.convert("RGBA")
