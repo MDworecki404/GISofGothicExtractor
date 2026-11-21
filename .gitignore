@@ -14,3 +14,4 @@ tools/level_plugin/
 tools/level_plugin_build/
 tools/lidar_plugin/
 .claude/settings.local.json
+docs/prompt-*.md
