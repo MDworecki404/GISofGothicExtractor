@@ -7,3 +7,10 @@ __pycache__/
 .pytest_cache/
 .superpowers/
 dist/
+
+# Lokalne / nie do publikacji
+*.log
+tools/level_plugin/
+tools/level_plugin_build/
+tools/lidar_plugin/
+.claude/settings.local.json
